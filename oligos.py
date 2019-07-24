@@ -1,8 +1,11 @@
 import argparse
 import sys
 import random
+import operator
+from itertools import imap
 
-#5’-ACTGGCCGCTTCACTG-var-GGTACCTCTAGA-tag-AGATCGGAAGAGCGTCG-3’
+
+#5'-ACTGGCCGCTTCACTG-var-GGTACCTCTAGA-tag-AGATCGGAAGAGCGTCG-3'
 #5'-F1-var-KpnI-filler_seq-XbaI-tag-R1-3'   total size = 230 nt
 
 nucs = ['A', 'C', 'G', 'T']
@@ -12,6 +15,13 @@ XbaI = "TCTAGA"
 
 F1 = "ACTGGCCGCTTCACTG"
 R1 = "AGATCGGAAGAGCGTCG"
+
+
+# find hamming distasnce between two sequences
+def hamming_distance(seq1, seq2):
+    assert len(seq1) == len(seq2)
+    ne = operator.ne
+    return sum(imap(ne, seq1, seq2))
 
 
 # filter once all oligos have been generated
@@ -35,8 +45,10 @@ def tag_generator(len_tags, num_tags):
     return tags
 
 
-if __name__ == '__main__':
+def create_oligos(tags, str_permutations):
     pass
 
-
+if __name__ == '__main__':
+    all_tags = tag_generator(10, 7500)
+    create_oligos(all_tags, )
 
