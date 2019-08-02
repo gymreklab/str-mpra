@@ -43,9 +43,11 @@ def find_eSTRs(eSTRs, strands):
             if eSTR[4] == strand[1]:
                 # check for forward strand or minus strand motif
                 if strand[2] == '+':
-                    strand_eSTRs.append([eSTR[0], eSTR[1], eSTR[2], eSTR[4], eSTR[10]])
+                    strand_eSTRs.append({"chrom":eSTR[0], "start":eSTR[1], 
+                                         "end":eSTR[2], "gene":eSTR[4], "motif":eSTR[10]})
                 else:
-                    strand_eSTRs.append([eSTR[0], eSTR[1], eSTR[2], eSTR[4], eSTR[11]])
+                    strand_eSTRs.append({"chrom":eSTR[0], "start":eSTR[1], 
+                                         "end":eSTR[2], "gene":eSTR[4], "motif":eSTR[11]})
     return strand_eSTRs
 
 
@@ -53,11 +55,11 @@ def find_eSTRs(eSTRs, strands):
 # 30 poly AC
 # 20 random tetranucleotides
 # TODO Make more user friendly so you can change what kind of negative controls you want and how many
-def gen_neg_cntrls(all_STRs, all_eSTRs):
+def negative_controls(all_STRs, all_eSTRs):
     tetranucleotides = []
     poly_AC = []
     poly_T = []
-    negative_controls = []
+    neg_cntrls = []
 
     # Grab random tetranucleotide STRs for negative control
     for STR in all_STRs:
@@ -65,24 +67,24 @@ def gen_neg_cntrls(all_STRs, all_eSTRs):
             if len(STR[3]) == 4:
                 neg_cntrl = check_str(STR, all_eSTRs)
                 if neg_cntrl:
-                    tetranucleotides.add(neg_cntrl)
+                    tetranucleotides.append(neg_cntrl)
         if len(poly_AC) < 30:
             if STR[3] == 'AC':
                 neg_cntrl = check_str(STR, all_eSTRs)
                 if neg_cntrl:
-                    poly_AC.add(neg_cntrl)
+                    poly_AC.append(neg_cntrl)
         if len(poly_T) < 30:
             if STR[3] == 'A':
                 # only has poly A's and no way to check strand so alter to T
                 neg_cntrl = check_str(STR, all_eSTRs)
-                neg_cntrl[-1] = 'T'
                 if neg_cntrl:
-                    poly_T.add(neg_cntrl)
+                    neg_cntrl["motif"] = 'T'
+                    poly_T.append(neg_cntrl)
 
-    negative_controls.extend(tetranucleotides)
-    negative_controls.extend(poly_AC)
-    negative_controls.extend(poly_T)
-    return negative_controls
+    neg_cntrls.extend(tetranucleotides)
+    neg_cntrls.extend(poly_AC)
+    neg_cntrls.extend(poly_T)
+    return neg_cntrls
 
 
 # Check to see if STR is a currently existing eSTR
@@ -94,12 +96,12 @@ def check_str(STR, eSTRs):
             break
 
     if not existing_eSTR:
-        return [STR[0], STR[1], STR[2], STR[3]]
+        return {"chrom":STR[0], "start":STR[1], "end":STR[2], "motif":STR[3]}
     else:
         return
     
 
-#TODO
+#TODO ADD HEADER INTO ALLELE
 # THINK ABOUT CHANGING THE LISTS TO DICTIONARIES FOR CLEANER CODE INSTEAD OF HAVING TO FORCE THE MOTIF TO BE IN THE END
 # ONLY NEED TO HAVE CHROM START END MOTIF BUT CAN CONTAIN OTHER WHICH WE CAN ACCOMODATE FOR HEADER IN OLIGO
 def create_alleles(STRs, min_max_vcf, ref_genome):
@@ -108,7 +110,7 @@ def create_alleles(STRs, min_max_vcf, ref_genome):
     # grab gene name from eSTRs for marker for each STR (if neg control wont have gene name)
     # go over all eSTRs and determine all permutations
     for STR in STRs:
-        for record in min_max_vcf.fetch(chrom=STR[0][3:], start=int(STR[1]), end=int(STR[2])):
+        for record in min_max_vcf.fetch(chrom=STR["chrom"][3:], start=int(STR["start"]), end=int(STR["end"])):
             # min and max bp differences for all samples vs reference to get range
             min_ref = 0
             max_ref = 0
@@ -125,42 +127,50 @@ def create_alleles(STRs, min_max_vcf, ref_genome):
             end = record.INFO['END']
 
             # Find the min and max alleles of each STR
-            min_repeat = (end-start+min_ref)//len(STR[-1])
-            max_repeat = (end-start+max_ref)//len(STR[-1])
+            min_repeat = (end-start+min_ref)//len(STR["motif"])
+            max_repeat = (end-start+max_ref)//len(STR["motif"])
 
             # length of genomic context to bring total length of max allele STR to 175 nucleotides
-            context_len = (175-(max_repeat*len(STR[-1])))/2.0
+            context_len = (175-(max_repeat*len(STR["motif"])))/2.0
 
-            l_context = ref_genome.fetch(region='%s:%i-%i'%(STR[0], start-(math.floor(context_len)), start-1)).upper()
-            r_context = ref_genome.fetch(region='%s:%i-%i'%(STR[0], end+1, end+math.ceil(context_len))).upper()
-            
+            # Make sure context is from the proper strand TODO (Maybe store strand)
+            l_context = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start-(math.floor(context_len)), start-1)).upper()
+            r_context = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], end+1, end+math.ceil(context_len))).upper()
+
+            if STR.get("strand", None) == '-':
+                r_context = reverse_complement(l_context)
+                l_context = reverse_complement(r_context)
+
             # check if there are no alternate alleles (Throw flag because this should not happen)
             if not min_repeat == max_repeat:
-                alleles.extend([l_context + r_context, 
-                                l_context + min_repeat*STR[-1] + r_context, 
-                                l_context + max_repeat*STR[-1] + r_context])
+                alleles.extend([_create_allele(STR, l_context + repeat*STR["motif"] + r_context, repeat) for repeat in [0, min_repeat, max_repeat]])
             else:
-                print("sample found with no allelic differences: %s %i %i"%(STR[0], start, end))
-                #alleles.extend(['', min_repeat*eSTR[3], (min_repeat-1)*eSTR[3], (min_repeat+1)*eSTR[3], (min_repeat+2)*eSTR[3]])
+                print("sample found with no allelic differences: %s %i %i"%(STR["chrom"], start, end))
 
             # one permutation before and after 
             if max_repeat - min_repeat == 1:
-                alleles.extend([l_context + (min_repeat-1)*STR[-1] + r_context, 
-                                l_context + (max_repeat+1)*STR[-1] + r_context])
+                alleles.extend([_create_allele(STR, l_context + repeat*STR["motif"] + r_context, repeat) for repeat in [min_repeat-1, max_repeat+1]])
             # one allele in between, one before
             elif max_repeat - min_repeat == 2:
-                alleles.extend([l_context + (min_repeat-1)*STR[-1] + r_context,
-                                l_context + (min_repeat+1)*STR[-1] + r_context])
+                alleles.extend([_create_allele(STR, l_context + repeat*STR["motif"] + r_context, repeat) for repeat in [min_repeat-1, min_repeat+1]])
             # 2 alleles in between try to make even distance
             else:
-                alleles.append(l_context + (min_repeat + ((max_repeat - min_repeat)//3))*STR[-1] + r_context)
-                alleles.append(l_context + (max_repeat - ((max_repeat - min_repeat)//3))*STR[-1] + r_context)
+                alleles.extend([_create_allele(STR, l_context + repeat*STR["motif"] + r_context, repeat) \
+                               for repeat in [(min_repeat + ((max_repeat - min_repeat)//3)), (max_repeat - ((max_repeat - min_repeat)//3))]])
             
     return alleles
 
 
+# Generate all alleles with the given repeat number, header, and oligo information 
+def _create_allele(STR, oligo, repeat_number):
+    return {"chrom":STR.get("chrom", ''), "pos":STR.get("start", ''),
+            "gene":STR.get("gene", ''), "num_repeats":repeat_number,
+            "oligo":oligo}
+
+
 # TODO do with Melissa, Alon, Catherine, and Sharona
 def gen_fun():
+    
     return
 
 
@@ -168,8 +178,7 @@ def gen_fun():
 # Make function more generic, just do it with data given
 # Header is made up of everything except last col which contains STR allele
 # Can have flags to indicate whether it is an eSTR, negative control, or fun oligo
-# IMPORTANT SEQUENCE MUST BE IN FORMAT (HEADER_INFORMATION, SEQUENCE ALLELE)
-# HEADER INFORMATION CAN SPAN MULTIPLE INDICES BUT ALLELE MUST BE LAST
+# TODO UPDATE WItH NEW HEADER FORMAT IN DICTIONARY
 def create_oligos(tags, filler, var, flag=''):
     oligos = []
 
@@ -184,7 +193,7 @@ def create_oligos(tags, filler, var, flag=''):
 
         # marker to label seq when printing, use flag to indicate if marker is wanted
         if flag:
-            marker = flag + '_' + '_'.join(seq[:-1])
+            marker = flag + '_' + '_'.join([])
 
         for i in range(3):
             oligos.append((marker, F1 + seq[-1] + KpnI + filler_seq + XbaI + tags[t_ind] + R1))
@@ -219,9 +228,10 @@ def filter_oligos(oligos):
 
 
 # Write all filtered oligos to a file
+# TODO UPDATE WITH NEW FORMAT
 def output_oligos(oligos, output_file):
     with open(output_file, 'a') as output:
-        output.write("Oligo_Type\tOligo\n")
+        output.write("Oligo_Type\tChrom\tPos\tGene\tRepeatNumber\tOligo\n")
         for oligo in oligos:
            output.write("%s\t%s\n"%(oligo[0], oligo[1]))
     return
@@ -230,7 +240,6 @@ def output_oligos(oligos, output_file):
 def main():
     # All input files
     ref_genome = pysam.Fastafile('/storage/resources/dbase/human/hg19/hg19.fa') # TODO make this a user input(hg19 fasta path)
-    # TODO MAKE SURE TO USE FETCH START= END= TO GET SEQUENCES IN A REGION START AND END ARE LOWER CASE
     tag_file = open('/storage/mlamkin/projects/str-mpra/permutation_tags.txt', 'r')
     vcf_reader = vcf.Reader(open('/storage/szfeupe/Runs/650GTEx_estr/Filter_Merged_STRs_All_Samples_New.vcf.gz', 'r'))
     strand_file = '/storage/mlamkin/projects/eSTR-data/gencode.v7.tab'
@@ -271,12 +280,12 @@ def main():
 
     # create list of eSTRs
     # TODO maybe make list of eSTRs to take a user specified option
-    strand_eSTRs = find_eSTRs(eSTRs[:450], strands)
+    strand_eSTRs = find_eSTRs(eSTRs[:1], strands)
     eSTR_alleles = create_alleles(strand_eSTRs, vcf_reader, ref_genome)
-    
+    # TODO ENSURE THAT STRAND REVERSE COMPLEMENT WORKS
     neg_cntrls = negative_controls(all_strs, eSTRs)
-    neg_alleles = create_alleles(negative_contrls, vcf_reader, ref_genome)
-    #fun = gen_fun()
+    neg_alleles = create_alleles(neg_cntrls, vcf_reader, ref_genome)
+    #fun = gen_fun() TODO GENERATE FUN SEQUENCES
 
     # TODO Should make sure you dont have to manually input these but they will appear based on what user wants 
     for seqs in [(neg_alleles, 'Negative Control'), (eSTR_alleles, 'eSTR'), (fun_alleles, 'Fun')]:
