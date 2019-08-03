@@ -4,6 +4,7 @@ import random
 import operator
 import vcf
 import pysam
+import re
 import math
 from itertools import imap
 
@@ -43,10 +44,10 @@ def find_eSTRs(eSTRs, strands):
             if eSTR[4] == strand[1]:
                 # check for forward strand or minus strand motif
                 if strand[2] == '+':
-                    strand_eSTRs.append({"chrom":eSTR[0], "start":eSTR[1], 
+                    strand_eSTRs.append({"chrom":eSTR[0], "start":eSTR[1], "strand":strand[2],
                                          "end":eSTR[2], "gene":eSTR[4], "motif":eSTR[10]})
                 else:
-                    strand_eSTRs.append({"chrom":eSTR[0], "start":eSTR[1], 
+                    strand_eSTRs.append({"chrom":eSTR[0], "start":eSTR[1], "strand":strand[2],
                                          "end":eSTR[2], "gene":eSTR[4], "motif":eSTR[11]})
     return strand_eSTRs
 
@@ -101,16 +102,15 @@ def check_str(STR, eSTRs):
         return
     
 
-#TODO ADD HEADER INTO ALLELE
-# THINK ABOUT CHANGING THE LISTS TO DICTIONARIES FOR CLEANER CODE INSTEAD OF HAVING TO FORCE THE MOTIF TO BE IN THE END
-# ONLY NEED TO HAVE CHROM START END MOTIF BUT CAN CONTAIN OTHER WHICH WE CAN ACCOMODATE FOR HEADER IN OLIGO
-def create_alleles(STRs, min_max_vcf, ref_genome):
+# Generate 4 alleles per STR each of different length and one with only genomic context surrounding the STR in the reference
+def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
     alleles = []
 
+    assert isinstance(STRs, list)
     # grab gene name from eSTRs for marker for each STR (if neg control wont have gene name)
     # go over all eSTRs and determine all permutations
     for STR in STRs:
-        for record in min_max_vcf.fetch(chrom=STR["chrom"][3:], start=int(STR["start"]), end=int(STR["end"])):
+        for record in min_max_vcf.fetch(chrom=STR["chrom"][3:], start=int(STR["start"])):
             # min and max bp differences for all samples vs reference to get range
             min_ref = 0
             max_ref = 0
@@ -130,62 +130,121 @@ def create_alleles(STRs, min_max_vcf, ref_genome):
             min_repeat = (end-start+min_ref)//len(STR["motif"])
             max_repeat = (end-start+max_ref)//len(STR["motif"])
 
-            # length of genomic context to bring total length of max allele STR to 175 nucleotides
-            context_len = (175-(max_repeat*len(STR["motif"])))/2.0
-
-            # Make sure context is from the proper strand TODO (Maybe store strand)
-            l_context = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start-(math.floor(context_len)), start-1)).upper()
-            r_context = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], end+1, end+math.ceil(context_len))).upper()
-
-            if STR.get("strand", None) == '-':
-                r_context = reverse_complement(l_context)
-                l_context = reverse_complement(r_context)
+            # hold repeat counts for alleles
+            repeats = []
 
             # check if there are no alternate alleles (Throw flag because this should not happen)
             if not min_repeat == max_repeat:
-                alleles.extend([_create_allele(STR, l_context + repeat*STR["motif"] + r_context, repeat) for repeat in [0, min_repeat, max_repeat]])
+                repeats.extend([0, min_repeat, max_repeat])
             else:
                 print("sample found with no allelic differences: %s %i %i"%(STR["chrom"], start, end))
 
-            # one permutation before and after 
-            if max_repeat - min_repeat == 1:
-                alleles.extend([_create_allele(STR, l_context + repeat*STR["motif"] + r_context, repeat) for repeat in [min_repeat-1, max_repeat+1]])
+            # two alleles before min_repeat number
+            if max_repeat - min_repeat == 1: 
+                repeats.extend([min_repeat-1, min_repeat-2])
             # one allele in between, one before
-            elif max_repeat - min_repeat == 2:
-                alleles.extend([_create_allele(STR, l_context + repeat*STR["motif"] + r_context, repeat) for repeat in [min_repeat-1, min_repeat+1]])
+            elif max_repeat - min_repeat == 2: 
+                repeats.extend([min_repeat-1, min_repeat+1])
             # 2 alleles in between try to make even distance
-            else:
-                alleles.extend([_create_allele(STR, l_context + repeat*STR["motif"] + r_context, repeat) \
-                               for repeat in [(min_repeat + ((max_repeat - min_repeat)//3)), (max_repeat - ((max_repeat - min_repeat)//3))]])
+            else: 
+                repeats.extend([(min_repeat + ((max_repeat - min_repeat)//3)), (max_repeat - ((max_repeat - min_repeat)//3))])
             
+            # Generate all alleles and check if we want context to fill whole 175 or not
+            for repeat in repeats:
+                if variable_context:
+                    seq = _create_seq(STR, ref_genome, start, end, repeat, repeat)
+                else:
+                    seq = _create_seq(STR, ref_genome, start, end, repeat, max_repeat)
+                alleles.append(_create_allele(STR, seq, repeat))
+            break
+
     return alleles
 
 
 # Generate all alleles with the given repeat number, header, and oligo information 
-def _create_allele(STR, oligo, repeat_number):
+def _create_allele(STR, seq, repeat_number):
     return {"chrom":STR.get("chrom", ''), "pos":STR.get("start", ''),
             "gene":STR.get("gene", ''), "num_repeats":repeat_number,
-            "oligo":oligo}
+            "seq":seq}
 
 
-# TODO do with Melissa, Alon, Catherine, and Sharona
-def gen_fun():
+def _create_seq(STR, ref_genome, start, end, repeat_num, max_repeat):
+    context_len = (175-(max_repeat*len(STR["motif"])))/2.0
     
-    return
+    # genomic context left of the motif and right of the motif (reverse complement and switched if on opposite strand)
+    l_context = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start-(math.floor(context_len)), start-1)).upper()
+    r_context = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], end+1, end+math.ceil(context_len))).upper()
+
+    if STR.get("strand", None) == '-':
+        r_context = reverse_complement(l_context)
+        l_context = reverse_complement(r_context)
+
+    return l_context + repeat_num*STR['motif'] + r_context
+    
+
+# generate fun sequences which are variable genomic context, random sequence replacing STR, and replace motif
+def gen_fun(vcf, ref_genome):
+    # Dinucleotide regions do TG, AG, AAC * 4 for each so 12 
+    # Random sequences (replace same stretch of AC but with random nucleotides) do this 8 times
+    # normal region but include extra genomic context so there is no filler inbetween
+    # FUN REGIONS:
+    nucs = ['A', 'C', 'G', 'T']
+    alt_allele_di = ['TG', 'AG', 'AAC']
+    alt_allele_six = ['TGCGAG', 'CCGTCA', 'ACGC']
+    RFT1 = {"chrom":"chr3", "start":'53128363', "motif":"AC"}
+    APEH = {"chrom":"chr3", "start":'49711229', "motif":"ACGCTC"}
+    DISP2 = {"chrom":"chr15", "start":'40643044', "motif":"AC"}
+    GLYCTK = {"chrom":"chr3", "start":'52341945', "motif":"GT"}
+    fun = []
+
+    for locus in [RFT1, DISP2, GLYCTK, APEH]:
+        for record in vcf.fetch(chrom=locus["chrom"][3:], start=int(locus["start"])):
+            # Start and end of repeat section
+            start = record.INFO['START']
+            end = record.INFO['END']
+
+            # repeat number in reference
+            ref_repeat = ((end-start)//2)
+            context_len = (175-(ref_repeat*len(locus["motif"])))/2.0
+
+            l_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], start-(math.floor(context_len)), start-1)).upper()
+            r_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], end+1, end+math.ceil(context_len))).upper()
+             
+            # determine what list of alternate alleles to use
+            if len(locus["motif"]) == 2: alt_allele = alt_allele_di
+            else: alt_allele = alt_allele_six
+
+            # add 4 of each alternate allele
+            for alt in alt_allele:
+                alt_context_len = (175-(ref_repeat*len(alt)))/2.0
+                alt_l_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], start-(math.floor(alt_context_len)), start-1)).upper()
+                alt_r_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], end+1, end+math.ceil(alt_context_len))).upper()
+                for i in range(4):
+                    fun.append({"chrom":locus["chrom"], "pos":locus["start"], 
+                                "num_repeats":ref_repeat,
+                                "seq":alt_l_context+ref_repeat*alt+alt_r_context})
+            # add 8 replacing the STR with random sequence holding the context constant
+            for i in range(8):
+                fun.append({"chrom":locus["chrom"], "pos":locus["start"], 
+                            "num_repeats":"random_seq",
+                            "seq":l_context+"".join([random.choice(nucs) for i in range(ref_repeat*len(locus["motif"]))])+r_context})
+
+            # last 4-5 have alternating repeats with different genomic context adding to 175
+            fun.extend(create_alleles([locus], vcf, ref_genome, variable_context=True)) 
+            break
+
+    return fun
 
 
 # Generate all oligos of eSTRs, negative controls, and the fun categories
-# Make function more generic, just do it with data given
-# Header is made up of everything except last col which contains STR allele
 # Can have flags to indicate whether it is an eSTR, negative control, or fun oligo
-# TODO UPDATE WItH NEW HEADER FORMAT IN DICTIONARY
 def create_oligos(tags, filler, var, flag=''):
     oligos = []
 
     # create three copies of each 230 nt oligo, every oligo has a unique tag
     t_ind = 0
     for seq in var:
-        filler_len = 230 - (len(seq[-1]) + len(tags[t_ind]) + 45)
+        filler_len = 230 - (len(seq["seq"]) + len(tags[t_ind]) + 45)
         if filler_len > 0:
             filler_seq = filler[:filler_len]
         else:
@@ -193,17 +252,18 @@ def create_oligos(tags, filler, var, flag=''):
 
         # marker to label seq when printing, use flag to indicate if marker is wanted
         if flag:
-            marker = flag + '_' + '_'.join([])
+            marker = "%s\t%s\t%s\t%s\t%s"%(flag, seq["chrom"], 
+                        str(seq["pos"]), seq.get("gene", ''), str(seq["num_repeats"]))
 
         for i in range(3):
-            oligos.append((marker, F1 + seq[-1] + KpnI + filler_seq + XbaI + tags[t_ind] + R1))
+            oligos.append({"label":marker, "seq":F1 + seq["seq"] + KpnI + filler_seq + XbaI + tags[t_ind] + R1})
             t_ind += 1
         
     return oligos
 
 
 # filter all currently existing oligos based on more than expected restriction enzyme sites
-# TODO Add in user defined restriction enzymes and reverse complement of said enzymes
+# TODO Add in user defined restriction enzymes and reverse complement of said enzymes and sequences to scan with regex
 def filter_oligos(oligos):
     filtered_oligos = []
     comp_motifs = [KpnI, XbaI]
@@ -212,28 +272,26 @@ def filter_oligos(oligos):
     # if more than 2 than filter that oligo out
     for oligo in oligos:
         thresh = 0
-        matching = []
         for motif in comp_motifs:
-            assert len(motif) <= len(oligo[1])
-            for i in range(len(oligo[1])-len(motif)+1):
-                if hamming_distance(motif, oligo[1][i:i+len(motif)]) < 2:
-                    matching.append(oligo[1][i:i+len(motif)])
+            assert len(motif) <= len(oligo["seq"])
+            for i in range(len(oligo["seq"])-len(motif)+1):
+                if hamming_distance(motif, oligo["seq"][i:i+len(motif)]) < 1: #TODO determine whether we want 1 distance to be filtered as well aka < 2
                     thresh += 1
+        
+        if re.search(r'GGCC[ACGT]{5,5}GGCC', oligo["seq"]):
+            continue
         if thresh == 2:
             filtered_oligos.append(oligo)
-        else:
-            print(oligo, matching)
 
     return filtered_oligos
 
 
 # Write all filtered oligos to a file
-# TODO UPDATE WITH NEW FORMAT
 def output_oligos(oligos, output_file):
     with open(output_file, 'a') as output:
         output.write("Oligo_Type\tChrom\tPos\tGene\tRepeatNumber\tOligo\n")
         for oligo in oligos:
-           output.write("%s\t%s\n"%(oligo[0], oligo[1]))
+           output.write("%s\t%s\n"%(oligo["label"], oligo["seq"]))
     return
 
 
@@ -279,14 +337,12 @@ def main():
         all_strs.append(line.rstrip('\n').split('\t')) 
 
     # create list of eSTRs
-    # TODO maybe make list of eSTRs to take a user specified option
-    strand_eSTRs = find_eSTRs(eSTRs[:1], strands)
+    # TODO maybe make list of eSTRs to take a user specified option to determine how many wanted
+    strand_eSTRs = find_eSTRs(eSTRs[:430], strands)
     eSTR_alleles = create_alleles(strand_eSTRs, vcf_reader, ref_genome)
-    # TODO ENSURE THAT STRAND REVERSE COMPLEMENT WORKS
     neg_cntrls = negative_controls(all_strs, eSTRs)
     neg_alleles = create_alleles(neg_cntrls, vcf_reader, ref_genome)
-    #fun = gen_fun() TODO GENERATE FUN SEQUENCES
-
+    fun_alleles = gen_fun(vcf_reader, ref_genome)
     # TODO Should make sure you dont have to manually input these but they will appear based on what user wants 
     for seqs in [(neg_alleles, 'Negative Control'), (eSTR_alleles, 'eSTR'), (fun_alleles, 'Fun')]:
         oligos.extend(create_oligos(all_tags, filler, seqs[0], flag=seqs[1]))
