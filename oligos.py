@@ -180,6 +180,13 @@ def _create_seq(STR, ref_genome, start, end, repeat_num, max_repeat):
         l_context = reverse_complement(r_context)
 
     return l_context + repeat_num*STR['motif'] + r_context
+
+
+# find longest stretch of STR repeats in referencei
+# TODO
+# How do we interpret sequence that starts with different repeat eg: repeat should be AAT but starts with ATA 
+def _longest_repeat(sequence):
+    return
     
 
 # generate fun sequences which are variable genomic context, random sequence replacing STR, and replace motif
@@ -228,11 +235,10 @@ def gen_fun(vcf, ref_genome):
                 fun.append({"chrom":locus["chrom"], "pos":locus["start"], 
                             "num_repeats":"random_seq",
                             "seq":l_context+"".join([random.choice(nucs) for i in range(ref_repeat*len(locus["motif"]))])+r_context})
-
-            # last 4-5 have alternating repeats with different genomic context adding to 175
-            fun.extend(create_alleles([locus], vcf, ref_genome, variable_context=True)) 
             break
 
+    # last 4-5 have alternating repeats with different genomic context adding to 175
+    fun.extend(create_alleles([DISP2, GLYCTK], vcf, ref_genome, variable_context=True)) 
     return fun
 
 
