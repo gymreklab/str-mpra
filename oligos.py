@@ -180,6 +180,13 @@ def _create_seq(STR, ref_genome, start, end, repeat_num, max_repeat):
         l_context = reverse_complement(r_context)
 
     return l_context + repeat_num*STR['motif'] + r_context
+
+
+# find longest stretch of STR repeats in referencei
+# TODO
+# How do we interpret sequence that starts with different repeat eg: repeat should be AAT but starts with ATA 
+def _longest_repeat(sequence):
+    return
     
 
 # generate fun sequences which are variable genomic context, random sequence replacing STR, and replace motif
@@ -228,16 +235,16 @@ def gen_fun(vcf, ref_genome):
                 fun.append({"chrom":locus["chrom"], "pos":locus["start"], 
                             "num_repeats":"random_seq",
                             "seq":l_context+"".join([random.choice(nucs) for i in range(ref_repeat*len(locus["motif"]))])+r_context})
-
-            # last 4-5 have alternating repeats with different genomic context adding to 175
-            fun.extend(create_alleles([locus], vcf, ref_genome, variable_context=True)) 
             break
 
+    # last 4-5 have alternating repeats with different genomic context adding to 175
+    fun.extend(create_alleles([DISP2, GLYCTK], vcf, ref_genome, variable_context=True)) 
     return fun
 
 
 # Generate all oligos of eSTRs, negative controls, and the fun categories
-# Can have flags to indicate whether it is an eSTR, negative control, or fun oligo
+# Flag is used for the label of each oligo generated to give meta information
+# each oligo has the form Forward primer + repeat sequeunce and genomic context + restriction enzyme 1 + filler seq + restriction enzyme 2 + tag + reverse primer
 def create_oligos(tags, filler, var, flag=''):
     oligos = []
 
@@ -256,7 +263,7 @@ def create_oligos(tags, filler, var, flag=''):
                         str(seq["pos"]), seq.get("gene", ''), str(seq["num_repeats"]))
 
         for i in range(3):
-            oligos.append({"label":marker, "seq":F1 + seq["seq"] + KpnI + filler_seq + XbaI + tags[t_ind] + R1})
+            oligos.append({"label":marker, "seq":' '.join([F1, seq["seq"], KpnI, filler_seq, XbaI, tags[t_ind], R1])})
             t_ind += 1
         
     return oligos
@@ -264,23 +271,21 @@ def create_oligos(tags, filler, var, flag=''):
 
 # filter all currently existing oligos based on more than expected restriction enzyme sites
 # TODO Add in user defined restriction enzymes and reverse complement of said enzymes and sequences to scan with regex
+# Label each enzyme with the number of times we expect it to be in the sequence
 def filter_oligos(oligos):
     filtered_oligos = []
-    comp_motifs = [KpnI, XbaI]
 
-    # iterate over all oligo and check if more than 2 potential cut sites
-    # if more than 2 than filter that oligo out
+    # restriction sites expected to be in sequence only once
+    restriction_sites = [(KpnI, 1), (XbaI, 1), (r'GGCC[ACGT]{5,5}GGCC', 0)]
+
+    # iterate over all oligo and check if exists more restriction sites than expected
     for oligo in oligos:
-        thresh = 0
-        for motif in comp_motifs:
-            assert len(motif) <= len(oligo["seq"])
-            for i in range(len(oligo["seq"])-len(motif)+1):
-                if hamming_distance(motif, oligo["seq"][i:i+len(motif)]) < 1: #TODO determine whether we want 1 distance to be filtered as well aka < 2
-                    thresh += 1
-        
-        if re.search(r'GGCC[ACGT]{5,5}GGCC', oligo["seq"]):
-            continue
-        if thresh == 2:
+        sequence = oligo["seq"].replace(' ', '')
+        filter_seq = False
+        for site, threshold in restriction_sites:
+            if len(re.findall(site, sequence)) > threshold:
+                filter_seq = True
+        if not filter_seq:
             filtered_oligos.append(oligo)
 
     return filtered_oligos
@@ -289,13 +294,14 @@ def filter_oligos(oligos):
 # Write all filtered oligos to a file
 def output_oligos(oligos, output_file):
     with open(output_file, 'a') as output:
-        output.write("Oligo_Type\tChrom\tPos\tGene\tRepeatNumber\tOligo\n")
+        output.write("Oligo_Type\tChrom\tPos\tGene\tRepeatNumber\tFoward_Primer_1 Variant_Sequence Restriction_Enzyme_1 Filler_Sequence Restriction_Enzyme_2 Tag Reverse_Primer_1\n")
         for oligo in oligos:
            output.write("%s\t%s\n"%(oligo["label"], oligo["seq"]))
     return
 
 
 def main():
+    # TODO use argparse to set user defined paths for the majority of these values 
     # All input files
     ref_genome = pysam.Fastafile('/storage/resources/dbase/human/hg19/hg19.fa') # TODO make this a user input(hg19 fasta path)
     tag_file = open('/storage/mlamkin/projects/str-mpra/permutation_tags.txt', 'r')
@@ -348,7 +354,7 @@ def main():
         oligos.extend(create_oligos(all_tags, filler, seqs[0], flag=seqs[1]))
 
     filtered_oligos = filter_oligos(oligos)
-    output_oligos(filtered_oligos, output_file)
+    #output_oligos(filtered_oligos, output_file)
 
 
 if __name__ == '__main__':
