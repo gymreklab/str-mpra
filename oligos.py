@@ -6,6 +6,7 @@ import vcf
 import pysam
 import re
 import math
+import pandas as pd
 
 debug_stretch = False
 
@@ -56,30 +57,50 @@ def find_eSTRs(eSTRs, strands):
 # 30 poly T
 # 30 poly AC
 # 20 random tetranucleotides
+# /storage/resources/dbase/human/hg19/hg19.hipstr_reference_withmotif_stranded.bed IMPORTANT, helps check strand 
 # TODO Make more user friendly so you can change what kind of negative controls you want and how many
 def negative_controls(all_STRs, all_eSTRs):
     tetranucleotides = []
     poly_AC = []
     poly_T = []
     neg_cntrls = []
+    strand_data = pd.read_csv('/storage/resources/dbase/human/hg19/hg19.hipstr_reference_withmotif_stranded.bed', 
+                              names=['chrom', 'start', 'end', 'period', '+', '-'], sep='\t') 
 
     # Grab random tetranucleotide STRs for negative control
     for STR in all_STRs:
+        if len(tetranucleotides) == 20 and len(poly_AC) == 30 and len(poly_T) == 30: break
+        cur_strand = strand_data[(strand_data['chrom'] == STR[0]) & (strand_data['start'] == int(STR[1]))]['+'].item()
         if len(tetranucleotides) < 20:
             if len(STR[3]) == 4:
                 neg_cntrl = check_str(STR, all_eSTRs)
                 if neg_cntrl:
+                    if STR[3] == cur_strand:
+                        neg_cntrl["strand"] = '+'
+                    else: 
+                        neg_cntrl["strand"] = '-'
                     tetranucleotides.append(neg_cntrl)
+                    continue
         if len(poly_AC) < 30:
             if STR[3] == 'AC':
                 neg_cntrl = check_str(STR, all_eSTRs)
                 if neg_cntrl:
+                    if STR[3] == cur_strand:
+                        neg_cntrl["strand"] = '+'
+                    else: 
+                        neg_cntrl["strand"] = '-'
                     poly_AC.append(neg_cntrl)
+                    continue
         if len(poly_T) < 30:
             if STR[3] == 'A':
                 # only has poly A's and no way to check strand so alter to T
                 neg_cntrl = check_str(STR, all_eSTRs)
                 if neg_cntrl:
+                    # reverse logic because we want poly T
+                    if STR[3] == cur_strand:
+                        neg_cntrl["strand"] = '-'
+                    else: 
+                        neg_cntrl["strand"] = '+'
                     neg_cntrl["motif"] = 'T'
                     poly_T.append(neg_cntrl)
 
@@ -126,7 +147,7 @@ def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
             # Start and end of repeat section
             start = record.INFO['START']
             end = record.INFO['END']
-            zero_allele = -1*(end-start+1) # TODO check this....
+            zero_allele = -1*(end-start+1)
 
             # Hold repeat lengths for alleles as diff from ref
             repeat_diffs = []
@@ -168,10 +189,12 @@ def _create_allele(STR, seq, repeat_number):
             "gene":STR.get("gene", ''), "num_repeats":repeat_number,
             "seq":seq}
 
+
 def _is_perfect(sequence, motif):
     if debug_stretch: print("checking %s %s"%(sequence, motif))
     perf_seq = (motif*math.ceil(len(sequence)*1.0/len(motif)))[0:len(sequence)]
     return perf_seq==sequence
+
 
 def _longest_repeat(sequence, motif):
     if debug_stretch: print("%s: %s"%(sequence, motif))
@@ -206,10 +229,12 @@ def _longest_repeat(sequence, motif):
     if debug_stretch: print("Answer: %s %s %s"%(sequence[longest_stretch_start: longest_stretch_start+longest_stretch], longest_stretch_start, longest_stretch))
     return longest_stretch_start, longest_stretch, best_rotation
 
+
 def _get_perfect_stretch(best_rotation, repeat_diff):
     motif_len = len(best_rotation)
     perf_seq = best_rotation*math.ceil(repeat_diff*1.0/motif_len)
     return perf_seq[0:repeat_diff]
+
 
 def _get_repeat_seq(ref_repeat, repeat_diff, motif):
     start_offset, stretch_len, best_rotation = _longest_repeat(ref_repeat, motif)
@@ -232,8 +257,10 @@ def _get_repeat_seq(ref_repeat, repeat_diff, motif):
     if repeat_diff == 0:
         return ref_repeat
     elif repeat_diff < 0:
+        repeat_diff = -1 * (((-1*repeat_diff)//len(motif)) * len(motif))
         return left_region+rep_region[-1*repeat_diff:]+right_region
     else:
+        repeat_diff = (repeat_diff//len(motif)) * len(motif)
         new_chunk = _get_perfect_stretch(best_rotation, repeat_diff)
         return left_region+new_chunk+rep_region+right_region
 
@@ -257,18 +284,8 @@ def _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref):
     if repeat_seq is None: return None
     
     final_seq = l_context + repeat_seq + r_context
-
-    #### debugging
-    print("########")
-    refseq = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start-(math.floor(context_len)), end+math.ceil(context_len))).upper()
-    if STR.get("strand", None) == '-':
-        print(reverse_complement(refseq))
-    else: print(refseq)
-    print("%s: %s"%(final_seq, len(final_seq)))
-    print("########")
-    #### debugging
-
     return final_seq
+
 
 # generate fun sequences which are variable genomic context, random sequence replacing STR, and replace motif
 def gen_fun(vcf, ref_genome):
@@ -429,13 +446,14 @@ def main():
     eSTR_alleles = create_alleles(strand_eSTRs, vcf_reader, ref_genome)
     neg_cntrls = negative_controls(all_strs, eSTRs)
     neg_alleles = create_alleles(neg_cntrls, vcf_reader, ref_genome)
-    fun_alleles = gen_fun(vcf_reader, ref_genome)
+    # DEPRECATED TODO read from file and not function fun_alleles = gen_fun(vcf_reader, ref_genome)
     # TODO Should make sure you dont have to manually input these but they will appear based on what user wants 
-    for seqs in [(neg_alleles, 'Negative Control'), (eSTR_alleles, 'eSTR'), (fun_alleles, 'Fun')]:
+    # Let all be default
+    for seqs in [(neg_alleles, 'Negative Control'), (eSTR_alleles, 'eSTR')]:
         oligos.extend(create_oligos(all_tags, filler, seqs[0], flag=seqs[1]))
 
     filtered_oligos = filter_oligos(oligos)
-    #output_oligos(filtered_oligos, output_file)
+    output_oligos(filtered_oligos, output_file)
 
 
 if __name__ == '__main__':
