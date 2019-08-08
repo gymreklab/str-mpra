@@ -126,7 +126,7 @@ def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
             # Start and end of repeat section
             start = record.INFO['START']
             end = record.INFO['END']
-            zero_allele = end-start+1 # TODO check this....
+            zero_allele = -1*(end-start+1) # TODO check this....
 
             # Hold repeat lengths for alleles as diff from ref
             repeat_diffs = []
@@ -149,11 +149,15 @@ def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
 
             # Generate all alleles and check if we want context to fill whole 175 or not
             for repeat_diff in repeat_diffs:
+                print("Repeat diff %s %s %s"%(repeat_diff, STR.get("gene","NA"), STR.get("strand","NA")))
                 if variable_context:
                     seq = _create_seq(STR, ref_genome, start, end, repeat_diff, repeat_diff)
                 else:
                     seq = _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref)
-                alleles.append(_create_allele(STR, seq, repeat_diff))
+                if seq is not None:
+                    alleles.append(_create_allele(STR, seq, repeat_diff))
+                else:
+                    print("WARNING: NO sequence created")
             break
     return alleles
 
@@ -170,13 +174,14 @@ def _is_perfect(sequence, motif):
     return perf_seq==sequence
 
 def _longest_repeat(sequence, motif):
-    print("%s: %s"%(sequence, motif))
+    if debug_stretch: print("%s: %s"%(sequence, motif))
     rotations = []
     for i in range(len(motif)):
         rotations.append(motif[i:]+motif[0:i])
         
     longest_stretch_start = -1
     longest_stretch = -1
+    best_rotation = None
 
     for rot in rotations:
         offset = 0
@@ -191,18 +196,46 @@ def _longest_repeat(sequence, motif):
             if stretch_length > longest_stretch:
                 longest_stretch_start = loc+offset
                 longest_stretch = stretch_length
+                best_rotation = rot
             offset = offset+loc+stretch_length
             x = sequence[offset:].find(rot)
             if x == -1:
                 break
             else: loc = x
             if debug_stretch: print("rot: %s loc: %s offset: %s x: %s"%(rot, loc, offset, x))
-    print("Answer: %s %s %s"%(sequence[longest_stretch_start: longest_stretch_start+longest_stretch], longest_stretch_start, longest_stretch))
-    return longest_stretch_start, longest_stretch_start+longest_stretch
+    if debug_stretch: print("Answer: %s %s %s"%(sequence[longest_stretch_start: longest_stretch_start+longest_stretch], longest_stretch_start, longest_stretch))
+    return longest_stretch_start, longest_stretch, best_rotation
+
+def _get_perfect_stretch(best_rotation, repeat_diff):
+    motif_len = len(best_rotation)
+    perf_seq = best_rotation*math.ceil(repeat_diff*1.0/motif_len)
+    return perf_seq[0:repeat_diff]
 
 def _get_repeat_seq(ref_repeat, repeat_diff, motif):
-    start_offset, end_offset = _longest_repeat(ref_repeat, motif)
-    return "NNNNN" # TODO
+    start_offset, stretch_len, best_rotation = _longest_repeat(ref_repeat, motif)
+    left_region = ref_repeat[0:start_offset]
+    rep_region = ref_repeat[start_offset:start_offset+stretch_len]
+    right_region = ref_repeat[start_offset+stretch_len:]
+
+    # Special cases
+    if start_offset == -1:
+        print("WARNING: could not find %s in %s"%(motif, ref_repeat))
+        return None
+    if repeat_diff + len(ref_repeat) < 0:
+        print("WARNING: repeat diff %s less than repeat length %s"%(repeat_diff, len(ref_repeat)))
+        return None
+    if repeat_diff + len(rep_region) < 0:
+        print("WARNING: repeat diff %s less than repeat length %s. Deleting non-perfect repeat."%(repeat_diff, len(rep_region)))
+        return ref_repeat[-1*repeat_diff:]
+
+    # Add or delete from perfect stretches
+    if repeat_diff == 0:
+        return ref_repeat
+    elif repeat_diff < 0:
+        return left_region+rep_region[-1*repeat_diff:]+right_region
+    else:
+        new_chunk = _get_perfect_stretch(best_rotation, repeat_diff)
+        return left_region+new_chunk+rep_region+right_region
 
 def _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref):
     max_repeat_length = (end-start+1)+max_ref
@@ -215,22 +248,24 @@ def _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref):
 
 
     if STR.get("strand", None) == '-':
-        r_context = reverse_complement(l_context)
+        newr_context = reverse_complement(l_context)
         l_context = reverse_complement(r_context)
+        r_context = newr_context
         ref_repeat = reverse_complement(ref_repeat)
 
     repeat_seq = _get_repeat_seq(ref_repeat, repeat_diff, STR["motif"])
-
+    if repeat_seq is None: return None
+    
     final_seq = l_context + repeat_seq + r_context
 
     #### debugging
-#    print("########")
-#    refseq = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start-(math.floor(context_len)), end+math.ceil(context_len))).upper()
-#    if STR.get("strand", None) == '+':
-#        print(refseq)
-#    else: print(reverse_complement(refseq))
-#    print("%s: %s"%(final_seq, len(final_seq)))
-#    print("########")
+    print("########")
+    refseq = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start-(math.floor(context_len)), end+math.ceil(context_len))).upper()
+    if STR.get("strand", None) == '-':
+        print(reverse_complement(refseq))
+    else: print(refseq)
+    print("%s: %s"%(final_seq, len(final_seq)))
+    print("########")
     #### debugging
 
     return final_seq
