@@ -170,7 +170,6 @@ def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
 
             # Generate all alleles and check if we want context to fill whole 175 or not
             for repeat_diff in repeat_diffs:
-                print("Repeat diff %s %s %s"%(repeat_diff, STR.get("gene","NA"), STR.get("strand","NA")))
                 if variable_context:
                     seq = _create_seq(STR, ref_genome, start, end, repeat_diff, repeat_diff)
                 else:
@@ -385,6 +384,8 @@ def filter_oligos(oligos):
                 filter_seq = True
         if not filter_seq:
             filtered_oligos.append(oligo)
+        else:
+            print("Filtered oligo sequence %s %s"%(oligo["label"], sequence))
 
     return filtered_oligos
 
