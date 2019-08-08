@@ -6,7 +6,6 @@ import vcf
 import pysam
 import re
 import math
-from itertools import imap
 
 # Repeat all oligos 3 times each STR variant will have 5 permutations
 #5'-ACTGGCCGCTTCACTG-var-GGTACCTCTAGA-tag-AGATCGGAAGAGCGTCG-3'
