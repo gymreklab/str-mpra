@@ -7,6 +7,8 @@ import pysam
 import re
 import math
 
+debug_stretch = False
+
 # Repeat all oligos 3 times each STR variant will have 5 permutations
 #5'-ACTGGCCGCTTCACTG-var-GGTACCTCTAGA-tag-AGATCGGAAGAGCGTCG-3'
 #5'-F1-var-KpnI-filler_seq-XbaI-tag-R1-3'   total size = 230 nt
@@ -124,39 +126,35 @@ def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
             # Start and end of repeat section
             start = record.INFO['START']
             end = record.INFO['END']
+            zero_allele = end-start+1 # TODO check this....
 
-            # Find the min and max alleles of each STR
-            min_repeat = (end-start+min_ref)//len(STR["motif"])
-            max_repeat = (end-start+max_ref)//len(STR["motif"])
-
-            # hold repeat counts for alleles
-            repeats = []
+            # Hold repeat lengths for alleles as diff from ref
+            repeat_diffs = []
 
             # check if there are no alternate alleles (Throw flag because this should not happen)
-            if not min_repeat == max_repeat:
-                repeats.extend([0, min_repeat, max_repeat])
+            if not min_ref == max_ref:
+                repeat_diffs.extend([zero_allele, min_ref, max_ref])
             else:
                 print("sample found with no allelic differences: %s %i %i"%(STR["chrom"], start, end))
 
             # two alleles before min_repeat number
-            if max_repeat - min_repeat == 1: 
-                repeats.extend([min_repeat-1, min_repeat-2])
+            if max_ref - min_ref == len(STR["motif"]): 
+                repeat_diffs.extend([min_ref-len(STR["motif"]), min_ref-2*len(STR["motif"])])
             # one allele in between, one before
-            elif max_repeat - min_repeat == 2: 
-                repeats.extend([min_repeat-1, min_repeat+1])
+            elif max_ref - min_ref == 2*len(STR["motif"]): 
+                repeat_diffs.extend([min_ref-len(STR["motif"]), min_ref+len(STR["motif"])])
             # 2 alleles in between try to make even distance
             else: 
-                repeats.extend([(min_repeat + ((max_repeat - min_repeat)//3)), (max_repeat - ((max_repeat - min_repeat)//3))])
-            
-            # Generate all alleles and check if we want context to fill whole 175 or not
-            for repeat in repeats:
-                if variable_context:
-                    seq = _create_seq(STR, ref_genome, start, end, repeat, repeat)
-                else:
-                    seq = _create_seq(STR, ref_genome, start, end, repeat, max_repeat)
-                alleles.append(_create_allele(STR, seq, repeat))
-            break
+                repeat_diffs.extend([(min_ref + ((max_ref - min_ref)//3)), (max_ref - ((max_ref - min_ref)//3))])
 
+            # Generate all alleles and check if we want context to fill whole 175 or not
+            for repeat_diff in repeat_diffs:
+                if variable_context:
+                    seq = _create_seq(STR, ref_genome, start, end, repeat_diff, repeat_diff)
+                else:
+                    seq = _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref)
+                alleles.append(_create_allele(STR, seq, repeat_diff))
+            break
     return alleles
 
 
@@ -166,27 +164,76 @@ def _create_allele(STR, seq, repeat_number):
             "gene":STR.get("gene", ''), "num_repeats":repeat_number,
             "seq":seq}
 
+def _is_perfect(sequence, motif):
+    if debug_stretch: print("checking %s %s"%(sequence, motif))
+    perf_seq = (motif*math.ceil(len(sequence)*1.0/len(motif)))[0:len(sequence)]
+    return perf_seq==sequence
 
-def _create_seq(STR, ref_genome, start, end, repeat_num, max_repeat):
-    context_len = (175-(max_repeat*len(STR["motif"])))/2.0
+def _longest_repeat(sequence, motif):
+    print("%s: %s"%(sequence, motif))
+    rotations = []
+    for i in range(len(motif)):
+        rotations.append(motif[i:]+motif[0:i])
+        
+    longest_stretch_start = -1
+    longest_stretch = -1
+
+    for rot in rotations:
+        offset = 0
+        loc = sequence.find(rot)
+        while True:
+            stretch_length = len(rot)
+            while True:
+                if offset+loc+stretch_length >= len(sequence): break
+                if _is_perfect(sequence[offset+loc:offset+loc+stretch_length+1], rot):
+                    stretch_length += 1
+                else: break
+            if stretch_length > longest_stretch:
+                longest_stretch_start = loc+offset
+                longest_stretch = stretch_length
+            offset = offset+loc+stretch_length
+            x = sequence[offset:].find(rot)
+            if x == -1:
+                break
+            else: loc = x
+            if debug_stretch: print("rot: %s loc: %s offset: %s x: %s"%(rot, loc, offset, x))
+    print("Answer: %s %s %s"%(sequence[longest_stretch_start: longest_stretch_start+longest_stretch], longest_stretch_start, longest_stretch))
+    return longest_stretch_start, longest_stretch_start+longest_stretch
+
+def _get_repeat_seq(ref_repeat, repeat_diff, motif):
+    start_offset, end_offset = _longest_repeat(ref_repeat, motif)
+    return "NNNNN" # TODO
+
+def _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref):
+    max_repeat_length = (end-start+1)+max_ref
+    context_len = (175-max_repeat_length)/2.0
     
     # genomic context left of the motif and right of the motif (reverse complement and switched if on opposite strand)
     l_context = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start-(math.floor(context_len)), start-1)).upper()
     r_context = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], end+1, end+math.ceil(context_len))).upper()
+    ref_repeat = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start, end)).upper()
+
 
     if STR.get("strand", None) == '-':
         r_context = reverse_complement(l_context)
         l_context = reverse_complement(r_context)
+        ref_repeat = reverse_complement(ref_repeat)
 
-    return l_context + repeat_num*STR['motif'] + r_context
+    repeat_seq = _get_repeat_seq(ref_repeat, repeat_diff, STR["motif"])
 
+    final_seq = l_context + repeat_seq + r_context
 
-# find longest stretch of STR repeats in referencei
-# TODO
-# How do we interpret sequence that starts with different repeat eg: repeat should be AAT but starts with ATA 
-def _longest_repeat(sequence):
-    return
-    
+    #### debugging
+#    print("########")
+#    refseq = ref_genome.fetch(region='%s:%i-%i'%(STR["chrom"], start-(math.floor(context_len)), end+math.ceil(context_len))).upper()
+#    if STR.get("strand", None) == '+':
+#        print(refseq)
+#    else: print(reverse_complement(refseq))
+#    print("%s: %s"%(final_seq, len(final_seq)))
+#    print("########")
+    #### debugging
+
+    return final_seq
 
 # generate fun sequences which are variable genomic context, random sequence replacing STR, and replace motif
 def gen_fun(vcf, ref_genome):
@@ -359,4 +406,8 @@ def main():
 if __name__ == '__main__':
     main()
 
+#seq="GTTTGTTTTGTTTGTTTGTTTGTTTGTTTGTTTGTTT"
+#_longest_repeat(seq, "GTTT")
 
+#seq="ATATATATATATATGTATAT"
+#_longest_repeat(seq, "AT")
