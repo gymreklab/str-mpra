@@ -287,55 +287,9 @@ def _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref):
 
 
 # generate fun sequences which are variable genomic context, random sequence replacing STR, and replace motif
-def gen_fun(vcf, ref_genome):
-    # Dinucleotide regions do TG, AG, AAC * 4 for each so 12 
-    # Random sequences (replace same stretch of AC but with random nucleotides) do this 8 times
-    # normal region but include extra genomic context so there is no filler inbetween
-    # FUN REGIONS:
-    nucs = ['A', 'C', 'G', 'T']
-    alt_allele_di = ['TG', 'AG', 'AAC']
-    alt_allele_six = ['TGCGAG', 'CCGTCA', 'ACGC']
-    RFT1 = {"chrom":"chr3", "start":'53128363', "motif":"AC"}
-    APEH = {"chrom":"chr3", "start":'49711229', "motif":"ACGCTC"}
-    DISP2 = {"chrom":"chr15", "start":'40643044', "motif":"AC"}
-    GLYCTK = {"chrom":"chr3", "start":'52341945', "motif":"GT"}
-    fun = []
-
-    for locus in [RFT1, DISP2, GLYCTK, APEH]:
-        for record in vcf.fetch(chrom=locus["chrom"][3:], start=int(locus["start"])):
-            # Start and end of repeat section
-            start = record.INFO['START']
-            end = record.INFO['END']
-
-            # repeat number in reference
-            ref_repeat = ((end-start)//2)
-            context_len = (175-(ref_repeat*len(locus["motif"])))/2.0
-
-            l_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], start-(math.floor(context_len)), start-1)).upper()
-            r_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], end+1, end+math.ceil(context_len))).upper()
-             
-            # determine what list of alternate alleles to use
-            if len(locus["motif"]) == 2: alt_allele = alt_allele_di
-            else: alt_allele = alt_allele_six
-
-            # add 4 of each alternate allele
-            for alt in alt_allele:
-                alt_context_len = (175-(ref_repeat*len(alt)))/2.0
-                alt_l_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], start-(math.floor(alt_context_len)), start-1)).upper()
-                alt_r_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], end+1, end+math.ceil(alt_context_len))).upper()
-                for i in range(4):
-                    fun.append({"chrom":locus["chrom"], "pos":locus["start"], 
-                                "num_repeats":ref_repeat,
-                                "seq":alt_l_context+ref_repeat*alt+alt_r_context})
-            # add 8 replacing the STR with random sequence holding the context constant
-            for i in range(8):
-                fun.append({"chrom":locus["chrom"], "pos":locus["start"], 
-                            "num_repeats":"random_seq",
-                            "seq":l_context+"".join([random.choice(nucs) for i in range(ref_repeat*len(locus["motif"]))])+r_context})
-            break
-
-    # last 4-5 have alternating repeats with different genomic context adding to 175
-    fun.extend(create_alleles([DISP2, GLYCTK], vcf, ref_genome, variable_context=True)) 
+def gen_fun(fun_file):
+    fun_data = pd.read_csv(fun_file, sep='\t')
+    fun = fun_data.to_dict(orient='records')
     return fun
 
 
@@ -379,13 +333,16 @@ def filter_oligos(oligos):
     for oligo in oligos:
         sequence = oligo["seq"].replace(' ', '')
         filter_seq = False
+        extra_site_locs = []
         for site, threshold in restriction_sites:
             if len(re.findall(site, sequence)) > threshold:
                 filter_seq = True
+                extra_site_locs.extend(re.findall(site, sequence))
         if not filter_seq:
             filtered_oligos.append(oligo)
         else:
-            print("Filtered oligo sequence %s %s"%(oligo["label"], sequence))
+            print("Filtered oligo sequence. %s %s"%(oligo["label"], oligo["seq"]))
+            print("Extra sites:", extra_site_locs)
 
     return filtered_oligos
 
@@ -393,7 +350,7 @@ def filter_oligos(oligos):
 # Write all filtered oligos to a file
 def output_oligos(oligos, output_file):
     with open(output_file, 'a') as output:
-        output.write("Oligo_Type\tChrom\tPos\tGene\tRepeatNumber\tFoward_Primer_1 Variant_Sequence Restriction_Enzyme_1 Filler_Sequence Restriction_Enzyme_2 Tag Reverse_Primer_1\n")
+        output.write("Oligo_Type\tChrom\tPos\tGene\tRepeat_Number\tFoward_Primer_1 Variant_Sequence Restriction_Enzyme_1 Filler_Sequence Restriction_Enzyme_2 Tag Reverse_Primer_1\n")
         for oligo in oligos:
            output.write("%s\t%s\n"%(oligo["label"], oligo["seq"]))
     return
@@ -404,6 +361,7 @@ def main():
     # All input files
     ref_genome = pysam.Fastafile('/storage/resources/dbase/human/hg19/hg19.fa') # TODO make this a user input(hg19 fasta path)
     tag_file = open('/storage/mlamkin/projects/str-mpra/permutation_tags.txt', 'r')
+    fun_file = './fun_loci/STRMPRA_FunLoci.txt'
     vcf_reader = vcf.Reader(open('/storage/szfeupe/Runs/650GTEx_estr/Filter_Merged_STRs_All_Samples_New.vcf.gz', 'rb'))
     strand_file = '/storage/mlamkin/projects/eSTR-data/gencode.v7.tab'
     eSTR_file_path = '/storage/mlamkin/projects/eSTR-data/eSTRGtex_DatasetS1.csv'
@@ -447,10 +405,10 @@ def main():
     eSTR_alleles = create_alleles(strand_eSTRs, vcf_reader, ref_genome)
     neg_cntrls = negative_controls(all_strs, eSTRs)
     neg_alleles = create_alleles(neg_cntrls, vcf_reader, ref_genome)
-    # DEPRECATED TODO read from file and not function fun_alleles = gen_fun(vcf_reader, ref_genome)
+    fun_alleles = gen_fun(fun_file)
     # TODO Should make sure you dont have to manually input these but they will appear based on what user wants 
     # Let all be default
-    for seqs in [(neg_alleles, 'Negative Control'), (eSTR_alleles, 'eSTR')]:
+    for seqs in [(neg_alleles, 'Negative_Control'), (eSTR_alleles, 'eSTR'), (fun_alleles, 'Fun')]:
         oligos.extend(create_oligos(all_tags, filler, seqs[0], flag=seqs[1]))
 
     filtered_oligos = filter_oligos(oligos)
