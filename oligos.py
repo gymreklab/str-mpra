@@ -296,26 +296,28 @@ def gen_fun(fun_file):
 # Generate all oligos of eSTRs, negative controls, and the fun categories
 # Flag is used for the label of each oligo generated to give meta information
 # each oligo has the form Forward primer + repeat sequeunce and genomic context + restriction enzyme 1 + filler seq + restriction enzyme 2 + tag + reverse primer
-def create_oligos(tags, filler, var, flag=''):
+def create_oligos(tags, filler, all_alleles, flags=[]):
     oligos = []
+    assert len(all_alleles) == len(flags)
 
     # create three copies of each 230 nt oligo, every oligo has a unique tag
     t_ind = 0
-    for seq in var:
-        filler_len = 230 - (len(seq["seq"]) + len(tags[t_ind]) + 45)
-        if filler_len > 0:
-            filler_seq = filler[:filler_len]
-        else:
-            filler_seq = ''
+    for var, flag in zip(all_alleles, flags):
+        for seq in var:
+            filler_len = 230 - (len(seq["seq"]) + len(tags[t_ind]) + 45)
+            if filler_len > 0:
+                filler_seq = filler[:filler_len]
+            else:
+                filler_seq = ''
 
-        # marker to label seq when printing, use flag to indicate if marker is wanted
-        if flag:
-            marker = "%s\t%s\t%s\t%s\t%s"%(flag, seq["chrom"], 
-                        str(seq["pos"]), seq.get("gene", ''), str(seq["num_repeats"]))
+            # marker to label seq when printing, use flag to indicate if marker is wanted
+            if flag:
+                marker = "%s\t%s\t%s\t%s\t%s"%(flag, seq["chrom"], 
+                            str(seq["pos"]), seq.get("gene", ''), str(seq["num_repeats"]))
 
-        for i in range(3):
-            oligos.append({"label":marker, "seq":' '.join([F1, seq["seq"], KpnI, filler_seq, XbaI, tags[t_ind], R1])})
-            t_ind += 1
+            for i in range(3):
+                oligos.append({"label":marker, "seq":' '.join([F1, seq["seq"], KpnI, filler_seq, XbaI, tags[t_ind], R1])})
+                t_ind += 1
         
     return oligos
 
@@ -341,7 +343,7 @@ def filter_oligos(oligos):
         if not filter_seq:
             filtered_oligos.append(oligo)
         else:
-            print("Filtered oligo sequence. %s %s"%(oligo["label"], oligo["seq"]))
+            print("Filtered_oligo %s %s"%(oligo["label"], oligo["seq"]))
             print("Extra sites:", extra_site_locs)
 
     return filtered_oligos
@@ -408,8 +410,9 @@ def main():
     fun_alleles = gen_fun(fun_file)
     # TODO Should make sure you dont have to manually input these but they will appear based on what user wants 
     # Let all be default
-    for seqs in [(neg_alleles, 'Negative_Control'), (eSTR_alleles, 'eSTR'), (fun_alleles, 'Fun')]:
-        oligos.extend(create_oligos(all_tags, filler, seqs[0], flag=seqs[1]))
+    all_alleles = [neg_alleles, eSTR_alleles, fun_alleles]
+    flags = ['Negative_Control', 'eSTR', 'Fun']
+    oligos.extend(create_oligos(all_tags, filler, all_alleles, flags=flags))
 
     filtered_oligos = filter_oligos(oligos)
     output_oligos(filtered_oligos, output_file)
