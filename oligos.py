@@ -334,6 +334,7 @@ def filter_oligos(oligos):
     # iterate over all oligo and check if exists more restriction sites than expected
     for oligo in oligos:
         sequence = oligo["seq"].replace(' ', '')
+        assert len(sequence) == 230
         filter_seq = False
         extra_site_locs = []
         for site, threshold in restriction_sites:
