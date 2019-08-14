@@ -58,55 +58,46 @@ def find_eSTRs(eSTRs, strands):
 # 30 poly AC
 # 20 random tetranucleotides
 # /storage/resources/dbase/human/hg19/hg19.hipstr_reference_withmotif_stranded.bed IMPORTANT, helps check strand 
-# TODO Make more user friendly so you can change what kind of negative controls you want and how many
-def negative_controls(all_STRs, all_eSTRs):
-    tetranucleotides = []
-    poly_AC = []
-    poly_T = []
+def negative_controls(all_STRs, all_eSTRs, controls):
     neg_cntrls = []
     strand_data = pd.read_csv('/storage/resources/dbase/human/hg19/hg19.hipstr_reference_withmotif_stranded.bed', 
                               names=['chrom', 'start', 'end', 'period', '+', '-'], sep='\t') 
 
-    # Grab random tetranucleotide STRs for negative control
+    # Get current existing list of Motifs for negative control
     for STR in all_STRs:
-        if len(tetranucleotides) == 20 and len(poly_AC) == 30 and len(poly_T) == 30: break
+        if all([control["total"] == control["current"] for control in controls]): break
         cur_strand = strand_data[(strand_data['chrom'] == STR[0]) & (strand_data['start'] == int(STR[1]))]['+'].item()
-        if len(tetranucleotides) < 20:
-            if len(STR[3]) == 4:
-                neg_cntrl = check_str(STR, all_eSTRs)
-                if neg_cntrl:
-                    if STR[3] == cur_strand:
-                        neg_cntrl["strand"] = '+'
-                    else: 
-                        neg_cntrl["strand"] = '-'
-                    tetranucleotides.append(neg_cntrl)
-                    continue
-        if len(poly_AC) < 30:
-            if STR[3] == 'AC':
-                neg_cntrl = check_str(STR, all_eSTRs)
-                if neg_cntrl:
-                    if STR[3] == cur_strand:
-                        neg_cntrl["strand"] = '+'
-                    else: 
-                        neg_cntrl["strand"] = '-'
-                    poly_AC.append(neg_cntrl)
-                    continue
-        if len(poly_T) < 30:
-            if STR[3] == 'A':
-                # only has poly A's and no way to check strand so alter to T
-                neg_cntrl = check_str(STR, all_eSTRs)
-                if neg_cntrl:
-                    # reverse logic because we want poly T
-                    if STR[3] == cur_strand:
-                        neg_cntrl["strand"] = '-'
-                    else: 
-                        neg_cntrl["strand"] = '+'
-                    neg_cntrl["motif"] = 'T'
-                    poly_T.append(neg_cntrl)
 
-    neg_cntrls.extend(tetranucleotides)
-    neg_cntrls.extend(poly_AC)
-    neg_cntrls.extend(poly_T)
+        for control in controls:
+            # Already found all negative controls for current repeat unit
+            if control["total"] == control["current"]: continue
+            neg_cntrl = {}
+            # search for control motif
+            if re.search('^'+control["motif"]+'$', STR[3]):
+                neg_cntrl = check_str(STR, all_eSTRs)
+                if neg_cntrl:
+                    # check if the Motif is on the + strand, if not then on - strand
+                    if STR[3] == cur_strand:
+                        neg_cntrl["strand"] = '+'
+                    else:
+                        neg_cntrl["strand"] = '-'
+
+            # search for control reverse complement
+            elif (not '[' in control["motif"]) and re.search('^'+reverse_complement(control["motif"])+'$', STR[3]):
+                neg_cntrl = check_str(STR, all_eSTRs)
+                if neg_cntrl:
+                    neg_cntrl["motif"] = control["motif"]
+                    # check reverse complement motif if matches then motif is on - strand
+                    if STR[3] == cur_strand:
+                        neg_cntrl["strand"] = '-'
+                    else:
+                        neg_cntrl["strand"] = '+'
+
+            # found a negative control add it to the final list
+            if neg_cntrl:
+                control["current"] += 1
+                neg_cntrls.append(neg_cntrl)
+
     return neg_cntrls
 
 
@@ -363,14 +354,33 @@ def output_oligos(oligos, output_file):
 def main():
     # TODO use argparse to set user defined paths for the majority of these values 
     # All input files
+    parser = argparse.ArgumentParser(description='Generate Oligonucleotides For MPRA.')
+    parser.add_argument
     ref_genome = pysam.Fastafile('/storage/resources/dbase/human/hg19/hg19.fa') # TODO make this a user input(hg19 fasta path)
-    tag_file = open('/storage/mlamkin/projects/str-mpra/permutation_tags.txt', 'r')
+    tag_file = open('./permutation_tags.txt', 'r')
     fun_file = './fun_loci/STRMPRA_FunLoci.txt'
     vcf_reader = vcf.Reader(open('/storage/szfeupe/Runs/650GTEx_estr/Filter_Merged_STRs_All_Samples_New.vcf.gz', 'rb'))
     strand_file = '/storage/mlamkin/projects/eSTR-data/gencode.v7.tab'
+
+    """
+    inout_group = parser.add_argument_group("Input/output")
+    inout_group.add_argument("--vcf", help="Input STR VCF file", type=str, required=True)
+    inout_group.add_argument("--out", help="Name of output file. Use stdout for standard output.", type=str, required=True)
+    filter_group = parser.add_argument_group("eSTR group")
+    filter_group.add_argument("--samples", help="File containing list of samples to include", type=str)
+    filter_group.add_argument("--region", help="Restrict to this region chrom:start-end", type=str)
+    stat_group = parser.add_argument_group("Stats group")
+    stat_group.add_argument("--thresh", help="Output threshold field (for GangSTR strinfo). Threshold is set to the max observed allele length", action="store_true")
+    stat_group.add_argument("--afreq", help="Output allele frequencies", action="store_true")
+    stat_group.add_argument("--acount", help="Output allele counts", action="store_true")
+    stat_group.add_argument("--hwep", help="Output HWE p-values per loci.", action="store_true")
+    stat_group.add_argument("--het", help="Output observed heterozygote counts used for HWE per loci.", action="store_true")
+    """
+
+    # TODO CSV IN THE FORM OF?
     eSTR_file_path = '/storage/mlamkin/projects/eSTR-data/eSTRGtex_DatasetS1.csv'
     all_strs_file = '/storage/mlamkin/projects/eSTR-data/all_analyzed_strs_v2.tab'
-    filler = open('/storage/mlamkin/projects/str-mpra/restriction_filler.txt', 'r').readline().rstrip('\n')
+    filler = open('./restriction_filler.txt', 'r').readline().rstrip('\n')
 
     # input data
     all_strs = []
@@ -407,9 +417,12 @@ def main():
     # TODO maybe make list of eSTRs to take a user specified option to determine how many wanted
     strand_eSTRs = find_eSTRs(eSTRs[:430], strands)
     eSTR_alleles = create_alleles(strand_eSTRs, vcf_reader, ref_genome)
-    neg_cntrls = negative_controls(all_strs, eSTRs)
+    neg_cntrls = negative_controls(all_strs, eSTRs, [{'motif':'T', 'total':30, 'current':0}, {'motif':'AC','total':30, 'current':0},{'motif': '[ACGT]{4}','total':20, 'current':0}])
+    print(neg_cntrls)
+    sys.exit(0)
     neg_alleles = create_alleles(neg_cntrls, vcf_reader, ref_genome)
     fun_alleles = gen_fun(fun_file)
+
     # TODO Should make sure you dont have to manually input these but they will appear based on what user wants 
     # Let all be default
     all_alleles = [neg_alleles, eSTR_alleles, fun_alleles]
