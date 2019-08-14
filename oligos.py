@@ -185,8 +185,8 @@ def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
 # Generate all alleles with the given repeat number, header, and oligo information 
 def _create_allele(STR, seq, repeat_number):
     return {"chrom":STR.get("chrom", ''), "pos":STR.get("start", ''),
-            "gene":STR.get("gene", ''), "num_repeats":repeat_number,
-            "seq":seq}
+            "gene":STR.get("gene", ''), "motif": STR["motif"], 
+            "num_repeats":repeat_number, "seq":seq}
 
 
 def _is_perfect(sequence, motif):
@@ -312,8 +312,9 @@ def create_oligos(tags, filler, all_alleles, flags=[]):
 
             # marker to label seq when printing, use flag to indicate if marker is wanted
             if flag:
-                marker = "%s\t%s\t%s\t%s\t%s"%(flag, seq["chrom"], 
-                            str(seq["pos"]), seq.get("gene", ''), str(seq["num_repeats"]))
+                marker = "%s\t%s\t%s\t%s\t%s\t%s"%(flag, seq["chrom"], 
+                                 str(seq["pos"]), seq.get("gene", ''), 
+                                 seq.get("motif", ''), str(seq["num_repeats"]))
 
             for i in range(3):
                 oligos.append({"label":marker, "seq":' '.join([F1, seq["seq"], KpnI, filler_seq, XbaI, tags[t_ind], R1])})
@@ -353,7 +354,7 @@ def filter_oligos(oligos):
 # Write all filtered oligos to a file
 def output_oligos(oligos, output_file):
     with open(output_file, 'a') as output:
-        output.write("Oligo_Type\tChrom\tPos\tGene\tRepeat_Number\tFoward_Primer_1 Variant_Sequence Restriction_Enzyme_1 Filler_Sequence Restriction_Enzyme_2 Tag Reverse_Primer_1\n")
+        output.write("Oligo_Type\tChrom\tPos\tGene\tMotif\tRepeat_Number\tFoward_Primer_1 Variant_Sequence Restriction_Enzyme_1 Filler_Sequence Restriction_Enzyme_2 Tag Reverse_Primer_1\n")
         for oligo in oligos:
            output.write("%s\t%s\n"%(oligo["label"], oligo["seq"]))
     return
