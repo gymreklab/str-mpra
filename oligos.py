@@ -1,4 +1,3 @@
-import argparse
 import sys
 import random
 import operator
@@ -11,15 +10,16 @@ import pandas as pd
 debug_stretch = False
 
 # Repeat all oligos 3 times each STR variant will have 5 permutations
-#5'-ACTGGCCGCTTCACTG-var-GGTACCTCTAGA-tag-AGATCGGAAGAGCGTCG-3'
 #5'-F1-var-KpnI-filler_seq-XbaI-tag-R1-3'   total size = 230 nt
 
-#TODO Make the Restriction enzymes and Primers a separate file to load in by the user
+# Restriction Enzymes 
 KpnI = "GGTACC"
 XbaI = "TCTAGA"
 
+# Primers 
 F1 = "ACTGGCCGCTTCACTG"
 R1 = "AGATCGGAAGAGCGTCG"
+
 
 # find reverse complement of a sequence
 def reverse_complement(seq):
@@ -54,9 +54,7 @@ def find_eSTRs(eSTRs, strands):
     return strand_eSTRs
 
 
-# 30 poly T
-# 30 poly AC
-# 20 random tetranucleotides
+# Generate negative controls that are STRs not present in the eSTR GTEX data based on motifs inputted 
 # /storage/resources/dbase/human/hg19/hg19.hipstr_reference_withmotif_stranded.bed IMPORTANT, helps check strand 
 def negative_controls(all_STRs, all_eSTRs, controls):
     neg_cntrls = []
@@ -315,13 +313,8 @@ def create_oligos(tags, filler, all_alleles, flags=[]):
 
 
 # filter all currently existing oligos based on more than expected restriction enzyme sites
-# TODO Add in user defined restriction enzymes and reverse complement of said enzymes and sequences to scan with regex
-# Label each enzyme with the number of times we expect it to be in the sequence
-def filter_oligos(oligos):
+def filter_oligos(oligos, restriction_sites):
     filtered_oligos = []
-
-    # restriction sites expected to be in sequence only once
-    restriction_sites = [(KpnI, 1), (XbaI, 1), (r'GGCC[ACGT]{5,5}GGCC', 0)]
 
     # iterate over all oligo and check if exists more restriction sites than expected
     for oligo in oligos:
@@ -352,32 +345,13 @@ def output_oligos(oligos, output_file):
 
 
 def main():
-    # TODO use argparse to set user defined paths for the majority of these values 
-    # All input files
-    parser = argparse.ArgumentParser(description='Generate Oligonucleotides For MPRA.')
-    parser.add_argument
-    ref_genome = pysam.Fastafile('/storage/resources/dbase/human/hg19/hg19.fa') # TODO make this a user input(hg19 fasta path)
+    # Input Data 
+    ref_genome = pysam.Fastafile('/storage/resources/dbase/human/hg19/hg19.fa')
     tag_file = open('./permutation_tags.txt', 'r')
     fun_file = './fun_loci/STRMPRA_FunLoci.txt'
     vcf_reader = vcf.Reader(open('/storage/szfeupe/Runs/650GTEx_estr/Filter_Merged_STRs_All_Samples_New.vcf.gz', 'rb'))
     strand_file = '/storage/mlamkin/projects/eSTR-data/gencode.v7.tab'
 
-    """
-    inout_group = parser.add_argument_group("Input/output")
-    inout_group.add_argument("--vcf", help="Input STR VCF file", type=str, required=True)
-    inout_group.add_argument("--out", help="Name of output file. Use stdout for standard output.", type=str, required=True)
-    filter_group = parser.add_argument_group("eSTR group")
-    filter_group.add_argument("--samples", help="File containing list of samples to include", type=str)
-    filter_group.add_argument("--region", help="Restrict to this region chrom:start-end", type=str)
-    stat_group = parser.add_argument_group("Stats group")
-    stat_group.add_argument("--thresh", help="Output threshold field (for GangSTR strinfo). Threshold is set to the max observed allele length", action="store_true")
-    stat_group.add_argument("--afreq", help="Output allele frequencies", action="store_true")
-    stat_group.add_argument("--acount", help="Output allele counts", action="store_true")
-    stat_group.add_argument("--hwep", help="Output HWE p-values per loci.", action="store_true")
-    stat_group.add_argument("--het", help="Output observed heterozygote counts used for HWE per loci.", action="store_true")
-    """
-
-    # TODO CSV IN THE FORM OF?
     eSTR_file_path = '/storage/mlamkin/projects/eSTR-data/eSTRGtex_DatasetS1.csv'
     all_strs_file = '/storage/mlamkin/projects/eSTR-data/all_analyzed_strs_v2.tab'
     filler = open('./restriction_filler.txt', 'r').readline().rstrip('\n')
@@ -392,8 +366,7 @@ def main():
     # file to output generated oligonucleotides too
     output_file = sys.argv[1]
 
-    # Generate tags for each oligo nucleotide to be created
-    # TODO make user specified amount of tags to be taken
+    # Grab tags from pregenerated file for each oligo to be created
     for line in tag_file:
         all_tags.append(line.rstrip('\n'))
 
@@ -414,30 +387,25 @@ def main():
         all_strs.append(line.rstrip('\n').split('\t')) 
 
     # create list of eSTRs
-    # TODO maybe make list of eSTRs to take a user specified option to determine how many wanted
     strand_eSTRs = find_eSTRs(eSTRs[:430], strands)
     eSTR_alleles = create_alleles(strand_eSTRs, vcf_reader, ref_genome)
     neg_cntrls = negative_controls(all_strs, eSTRs, [{'motif':'T', 'total':30, 'current':0}, {'motif':'AC','total':30, 'current':0},{'motif': '[ACGT]{4}','total':20, 'current':0}])
-    print(neg_cntrls)
-    sys.exit(0)
     neg_alleles = create_alleles(neg_cntrls, vcf_reader, ref_genome)
     fun_alleles = gen_fun(fun_file)
 
-    # TODO Should make sure you dont have to manually input these but they will appear based on what user wants 
-    # Let all be default
+    # Generate Oligos with all alleles found
     all_alleles = [neg_alleles, eSTR_alleles, fun_alleles]
     flags = ['Negative_Control', 'eSTR', 'Fun']
     oligos.extend(create_oligos(all_tags, filler, all_alleles, flags=flags))
 
-    filtered_oligos = filter_oligos(oligos)
+    # restriction sites expected to be in sequence
+    restriction_sites = [(KpnI, 1), (XbaI, 1), (r'GGCC[ACGT]{5,5}GGCC', 0)]
+
+    # filter and output oligos
+    filtered_oligos = filter_oligos(oligos, restriction_sites)
     output_oligos(filtered_oligos, output_file)
 
 
 if __name__ == '__main__':
     main()
 
-#seq="GTTTGTTTTGTTTGTTTGTTTGTTTGTTTGTTTGTTT"
-#_longest_repeat(seq, "GTTT")
-
-#seq="ATATATATATATATGTATAT"
-#_longest_repeat(seq, "AT")
