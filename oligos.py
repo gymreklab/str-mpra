@@ -435,7 +435,7 @@ def main():
         oligos.extend(create_oligos(all_tags, filler, seqs[0], flag=seqs[1]))
 
     filtered_oligos = filter_oligos(oligos)
-    #output_oligos(filtered_oligos, output_file)
+    output_oligos(filtered_oligos, output_file)
 
 
 if __name__ == '__main__':
