@@ -1,7 +1,7 @@
 # str-mpra
-Design of STR MPRA experiments
+Design and analysis of STR MPRA experiments
 
-To run:
-```
-python3 oligos.py <outputfile>
-```
+Folders:
+* `design/`: contains scripts for designing oligos
+* `process_iseq_prelim/`: contains scripts for prelim results comparing different enzymes and oligo types
+* `scripts/`: contains scripts for processing fastqs in to counts
