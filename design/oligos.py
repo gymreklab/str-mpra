@@ -1,4 +1,3 @@
-import argparse
 import sys
 import random
 import operator
@@ -11,15 +10,16 @@ import pandas as pd
 debug_stretch = False
 
 # Repeat all oligos 3 times each STR variant will have 5 permutations
-#5'-ACTGGCCGCTTCACTG-var-GGTACCTCTAGA-tag-AGATCGGAAGAGCGTCG-3'
 #5'-F1-var-KpnI-filler_seq-XbaI-tag-R1-3'   total size = 230 nt
 
-#TODO Make the Restriction enzymes and Primers a separate file to load in by the user
+# Restriction Enzymes 
 KpnI = "GGTACC"
 XbaI = "TCTAGA"
 
+# Primers 
 F1 = "ACTGGCCGCTTCACTG"
 R1 = "AGATCGGAAGAGCGTCG"
+
 
 # find reverse complement of a sequence
 def reverse_complement(seq):
@@ -31,10 +31,19 @@ def reverse_complement(seq):
 
 
 # find hamming distasnce between two sequences
-def hamming_distance(seq1, seq2):
+# if the two sequences have a hamming distance less than the threshold
+# return True otherwise return False
+def hamming_distance(seq1, seq2, thresh):
     assert len(seq1) == len(seq2)
-    ne = operator.ne
-    return sum(imap(ne, seq1, seq2))
+    dist = 0
+    too_close = True
+    for ind in range(len(seq1)):
+        if seq1[ind] != seq2[ind]:
+            dist += 1
+        if dist >= thresh:
+            too_close = False
+            break
+    return too_close
 
 
 # Create initial list of eSTRs and indicate what strand they are present on
@@ -54,59 +63,48 @@ def find_eSTRs(eSTRs, strands):
     return strand_eSTRs
 
 
-# 30 poly T
-# 30 poly AC
-# 20 random tetranucleotides
+# Generate negative controls that are STRs not present in the eSTR GTEX data based on motifs inputted 
 # /storage/resources/dbase/human/hg19/hg19.hipstr_reference_withmotif_stranded.bed IMPORTANT, helps check strand 
-# TODO Make more user friendly so you can change what kind of negative controls you want and how many
-def negative_controls(all_STRs, all_eSTRs):
-    tetranucleotides = []
-    poly_AC = []
-    poly_T = []
+def negative_controls(all_STRs, all_eSTRs, controls):
     neg_cntrls = []
     strand_data = pd.read_csv('/storage/resources/dbase/human/hg19/hg19.hipstr_reference_withmotif_stranded.bed', 
                               names=['chrom', 'start', 'end', 'period', '+', '-'], sep='\t') 
 
-    # Grab random tetranucleotide STRs for negative control
+    # Get current existing list of Motifs for negative control
     for STR in all_STRs:
-        if len(tetranucleotides) == 20 and len(poly_AC) == 30 and len(poly_T) == 30: break
+        if all([control["total"] == control["current"] for control in controls]): break
         cur_strand = strand_data[(strand_data['chrom'] == STR[0]) & (strand_data['start'] == int(STR[1]))]['+'].item()
-        if len(tetranucleotides) < 20:
-            if len(STR[3]) == 4:
-                neg_cntrl = check_str(STR, all_eSTRs)
-                if neg_cntrl:
-                    if STR[3] == cur_strand:
-                        neg_cntrl["strand"] = '+'
-                    else: 
-                        neg_cntrl["strand"] = '-'
-                    tetranucleotides.append(neg_cntrl)
-                    continue
-        if len(poly_AC) < 30:
-            if STR[3] == 'AC':
-                neg_cntrl = check_str(STR, all_eSTRs)
-                if neg_cntrl:
-                    if STR[3] == cur_strand:
-                        neg_cntrl["strand"] = '+'
-                    else: 
-                        neg_cntrl["strand"] = '-'
-                    poly_AC.append(neg_cntrl)
-                    continue
-        if len(poly_T) < 30:
-            if STR[3] == 'A':
-                # only has poly A's and no way to check strand so alter to T
-                neg_cntrl = check_str(STR, all_eSTRs)
-                if neg_cntrl:
-                    # reverse logic because we want poly T
-                    if STR[3] == cur_strand:
-                        neg_cntrl["strand"] = '-'
-                    else: 
-                        neg_cntrl["strand"] = '+'
-                    neg_cntrl["motif"] = 'T'
-                    poly_T.append(neg_cntrl)
 
-    neg_cntrls.extend(tetranucleotides)
-    neg_cntrls.extend(poly_AC)
-    neg_cntrls.extend(poly_T)
+        for control in controls:
+            # Already found all negative controls for current repeat unit
+            if control["total"] == control["current"]: continue
+            neg_cntrl = {}
+            # search for control motif
+            if re.search('^'+control["motif"]+'$', STR[3]):
+                neg_cntrl = check_str(STR, all_eSTRs)
+                if neg_cntrl:
+                    # check if the Motif is on the + strand, if not then on - strand
+                    if STR[3] == cur_strand:
+                        neg_cntrl["strand"] = '+'
+                    else:
+                        neg_cntrl["strand"] = '-'
+
+            # search for control reverse complement
+            elif (not '[' in control["motif"]) and re.search('^'+reverse_complement(control["motif"])+'$', STR[3]):
+                neg_cntrl = check_str(STR, all_eSTRs)
+                if neg_cntrl:
+                    neg_cntrl["motif"] = control["motif"]
+                    # check reverse complement motif if matches then motif is on - strand
+                    if STR[3] == cur_strand:
+                        neg_cntrl["strand"] = '-'
+                    else:
+                        neg_cntrl["strand"] = '+'
+
+            # found a negative control add it to the final list
+            if neg_cntrl:
+                control["current"] += 1
+                neg_cntrls.append(neg_cntrl)
+
     return neg_cntrls
 
 
@@ -144,6 +142,16 @@ def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
                 if min(GB) < min_ref: min_ref = min(GB)
                 if max(GB) > max_ref: max_ref = max(GB)
 
+            # update min and max alleles to be factored by motif length
+            if min_ref < 0:
+                min_ref = len(STR["motif"]) * math.ceil(min_ref*1.0/len(STR["motif"]))
+            else:
+                min_ref = len(STR["motif"]) * math.floor(min_ref*1.0/len(STR["motif"]))
+            if max_ref < 0:
+                max_ref = len(STR["motif"]) * math.ceil(max_ref*1.0/len(STR["motif"]))
+            else:
+                max_ref = len(STR["motif"]) * math.floor(max_ref*1.0/len(STR["motif"]))
+
             # Start and end of repeat section
             start = record.INFO['START']
             end = record.INFO['END']
@@ -165,28 +173,42 @@ def create_alleles(STRs, min_max_vcf, ref_genome, variable_context=False):
             elif max_ref - min_ref == 2*len(STR["motif"]): 
                 repeat_diffs.extend([min_ref-len(STR["motif"]), min_ref+len(STR["motif"])])
             # 2 alleles in between try to make even distance
-            else: 
-                repeat_diffs.extend([(min_ref + ((max_ref - min_ref)//3)), (max_ref - ((max_ref - min_ref)//3))])
+            else:
+                split = (max_ref - min_ref + 1)/3.0
+                from_min = len(STR["motif"]) * math.floor((min_ref + split)/len(STR["motif"]))
+                from_max = len(STR["motif"]) * math.ceil((max_ref - split)/len(STR["motif"]))
+                repeat_diffs.extend([from_min, from_max])
 
             # Generate all alleles and check if we want context to fill whole 175 or not
             for repeat_diff in repeat_diffs:
                 if variable_context:
                     seq = _create_seq(STR, ref_genome, start, end, repeat_diff, repeat_diff)
+
+                    # generate where the sequence starts in the reference for the allele
+                    max_repeat_length = (end-start+1)+repeat_diff
+                    context_len = (175-max_repeat_length)/2.0
+                    seq_start = start-(math.floor(context_len))
                 else:
                     seq = _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref)
+                    
+                    # generate where seq starts in the reference for the allele
+                    max_repeat_length = (end-start+1)+max_ref
+                    context_len = (175-max_repeat_length)/2.0
+                    seq_start = start-(math.floor(context_len))
+
                 if seq is not None:
-                    alleles.append(_create_allele(STR, seq, repeat_diff))
+                    alleles.append(_create_allele(STR, seq, repeat_diff, seq_start))
                 else:
                     print("WARNING: NO sequence created")
             break
     return alleles
 
 
-# Generate all alleles with the given repeat number, header, and oligo information 
-def _create_allele(STR, seq, repeat_number):
-    return {"chrom":STR.get("chrom", ''), "pos":STR.get("start", ''),
-            "gene":STR.get("gene", ''), "num_repeats":repeat_number,
-            "seq":seq}
+# Generate all alleles with the given repeat number, header, and oligo information
+def _create_allele(STR, seq, repeat_number, seq_start):
+    return {"chrom":STR.get("chrom", ''), "start_pos":seq_start, 
+            "str_pos":STR.get("start", ''), "str_end":STR.get("end", ''), 
+            "gene":STR.get("gene", ''), "motif": STR["motif"], "num_repeats":repeat_number, "seq":seq}
 
 
 def _is_perfect(sequence, motif):
@@ -287,105 +309,62 @@ def _create_seq(STR, ref_genome, start, end, repeat_diff, max_ref):
 
 
 # generate fun sequences which are variable genomic context, random sequence replacing STR, and replace motif
-def gen_fun(vcf, ref_genome):
-    # Dinucleotide regions do TG, AG, AAC * 4 for each so 12 
-    # Random sequences (replace same stretch of AC but with random nucleotides) do this 8 times
-    # normal region but include extra genomic context so there is no filler inbetween
-    # FUN REGIONS:
-    nucs = ['A', 'C', 'G', 'T']
-    alt_allele_di = ['TG', 'AG', 'AAC']
-    alt_allele_six = ['TGCGAG', 'CCGTCA', 'ACGC']
-    RFT1 = {"chrom":"chr3", "start":'53128363', "motif":"AC"}
-    APEH = {"chrom":"chr3", "start":'49711229', "motif":"ACGCTC"}
-    DISP2 = {"chrom":"chr15", "start":'40643044', "motif":"AC"}
-    GLYCTK = {"chrom":"chr3", "start":'52341945', "motif":"GT"}
-    fun = []
-
-    for locus in [RFT1, DISP2, GLYCTK, APEH]:
-        for record in vcf.fetch(chrom=locus["chrom"][3:], start=int(locus["start"])):
-            # Start and end of repeat section
-            start = record.INFO['START']
-            end = record.INFO['END']
-
-            # repeat number in reference
-            ref_repeat = ((end-start)//2)
-            context_len = (175-(ref_repeat*len(locus["motif"])))/2.0
-
-            l_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], start-(math.floor(context_len)), start-1)).upper()
-            r_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], end+1, end+math.ceil(context_len))).upper()
-             
-            # determine what list of alternate alleles to use
-            if len(locus["motif"]) == 2: alt_allele = alt_allele_di
-            else: alt_allele = alt_allele_six
-
-            # add 4 of each alternate allele
-            for alt in alt_allele:
-                alt_context_len = (175-(ref_repeat*len(alt)))/2.0
-                alt_l_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], start-(math.floor(alt_context_len)), start-1)).upper()
-                alt_r_context = ref_genome.fetch(region='%s:%i-%i'%(locus["chrom"], end+1, end+math.ceil(alt_context_len))).upper()
-                for i in range(4):
-                    fun.append({"chrom":locus["chrom"], "pos":locus["start"], 
-                                "num_repeats":ref_repeat,
-                                "seq":alt_l_context+ref_repeat*alt+alt_r_context})
-            # add 8 replacing the STR with random sequence holding the context constant
-            for i in range(8):
-                fun.append({"chrom":locus["chrom"], "pos":locus["start"], 
-                            "num_repeats":"random_seq",
-                            "seq":l_context+"".join([random.choice(nucs) for i in range(ref_repeat*len(locus["motif"]))])+r_context})
-            break
-
-    # last 4-5 have alternating repeats with different genomic context adding to 175
-    fun.extend(create_alleles([DISP2, GLYCTK], vcf, ref_genome, variable_context=True)) 
+def gen_fun(fun_file):
+    fun_data = pd.read_csv(fun_file, sep='\t')
+    fun_data.columns = ["chrom", "str_pos", "num_repeats", "seq"]
+    fun = fun_data.to_dict(orient='records')
     return fun
 
 
 # Generate all oligos of eSTRs, negative controls, and the fun categories
 # Flag is used for the label of each oligo generated to give meta information
 # each oligo has the form Forward primer + repeat sequeunce and genomic context + restriction enzyme 1 + filler seq + restriction enzyme 2 + tag + reverse primer
-def create_oligos(tags, filler, var, flag=''):
+def create_oligos(tags, filler, all_alleles, flags=[]):
     oligos = []
+    assert len(all_alleles) == len(flags)
 
     # create three copies of each 230 nt oligo, every oligo has a unique tag
     t_ind = 0
-    for seq in var:
-        filler_len = 230 - (len(seq["seq"]) + len(tags[t_ind]) + 45)
-        if filler_len > 0:
-            filler_seq = filler[:filler_len]
-        else:
-            filler_seq = ''
+    for var, flag in zip(all_alleles, flags):
+        for seq in var:
+            filler_len = 230 - (len(seq["seq"]) + len(tags[t_ind]) + 45)
+            if filler_len > 0:
+                filler_seq = filler[:filler_len]
+            else:
+                filler_seq = ''
 
-        # marker to label seq when printing, use flag to indicate if marker is wanted
-        if flag:
-            marker = "%s\t%s\t%s\t%s\t%s"%(flag, seq["chrom"], 
-                        str(seq["pos"]), seq.get("gene", ''), str(seq["num_repeats"]))
+            # marker to label seq when printing, use flag to indicate if marker is wanted
+            if flag:
+                marker = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s"%(flag, seq["chrom"], str(seq.get("start_pos", '')), 
+                                                 str(seq["str_pos"]), str(seq.get("str_end", '')), seq.get("gene", ''), 
+                                                 seq.get("motif", ''), str(seq["num_repeats"]))
 
-        for i in range(3):
-            oligos.append({"label":marker, "seq":' '.join([F1, seq["seq"], KpnI, filler_seq, XbaI, tags[t_ind], R1])})
-            t_ind += 1
+            for i in range(3):
+                oligos.append({"label":marker, "seq":' '.join([F1, seq["seq"], KpnI, filler_seq, XbaI, tags[t_ind], R1])})
+                t_ind += 1
         
     return oligos
 
 
 # filter all currently existing oligos based on more than expected restriction enzyme sites
-# TODO Add in user defined restriction enzymes and reverse complement of said enzymes and sequences to scan with regex
-# Label each enzyme with the number of times we expect it to be in the sequence
-def filter_oligos(oligos):
+def filter_oligos(oligos, restriction_sites):
     filtered_oligos = []
-
-    # restriction sites expected to be in sequence only once
-    restriction_sites = [(KpnI, 1), (XbaI, 1), (r'GGCC[ACGT]{5,5}GGCC', 0)]
 
     # iterate over all oligo and check if exists more restriction sites than expected
     for oligo in oligos:
         sequence = oligo["seq"].replace(' ', '')
+        assert len(sequence) == 230
         filter_seq = False
+        extra_site_locs = []
         for site, threshold in restriction_sites:
             if len(re.findall(site, sequence)) > threshold:
                 filter_seq = True
+                extra_site_locs.extend(re.findall(site, sequence))
         if not filter_seq:
             filtered_oligos.append(oligo)
         else:
-            print("Filtered oligo sequence %s %s"%(oligo["label"], sequence))
+            print("Filtered_oligo %s %s"%(oligo["label"], oligo["seq"]))
+            print("Extra sites:", extra_site_locs)
 
     return filtered_oligos
 
@@ -393,22 +372,23 @@ def filter_oligos(oligos):
 # Write all filtered oligos to a file
 def output_oligos(oligos, output_file):
     with open(output_file, 'a') as output:
-        output.write("Oligo_Type\tChrom\tPos\tGene\tRepeatNumber\tFoward_Primer_1 Variant_Sequence Restriction_Enzyme_1 Filler_Sequence Restriction_Enzyme_2 Tag Reverse_Primer_1\n")
+        output.write("Oligo_Type\tChrom\tStart_pos\tSTR_pos\tSTR_end\tGene\tMotif\tRepeat_Number\tFoward_Primer_1 Variant_Sequence Restriction_Enzyme_1 Filler_Sequence Restriction_Enzyme_2 Tag Reverse_Primer_1\n")
         for oligo in oligos:
            output.write("%s\t%s\n"%(oligo["label"], oligo["seq"]))
     return
 
 
 def main():
-    # TODO use argparse to set user defined paths for the majority of these values 
-    # All input files
-    ref_genome = pysam.Fastafile('/storage/resources/dbase/human/hg19/hg19.fa') # TODO make this a user input(hg19 fasta path)
-    tag_file = open('/storage/mlamkin/projects/str-mpra/permutation_tags.txt', 'r')
+    # Input Data 
+    ref_genome = pysam.Fastafile('/storage/resources/dbase/human/hg19/hg19.fa')
+    tag_file = open('./permutation_tags.txt', 'r')
+    fun_file = './fun_loci/STRMPRA_FunLoci.txt'
     vcf_reader = vcf.Reader(open('/storage/szfeupe/Runs/650GTEx_estr/Filter_Merged_STRs_All_Samples_New.vcf.gz', 'rb'))
     strand_file = '/storage/mlamkin/projects/eSTR-data/gencode.v7.tab'
+
     eSTR_file_path = '/storage/mlamkin/projects/eSTR-data/eSTRGtex_DatasetS1.csv'
     all_strs_file = '/storage/mlamkin/projects/eSTR-data/all_analyzed_strs_v2.tab'
-    filler = open('/storage/mlamkin/projects/str-mpra/restriction_filler.txt', 'r').readline().rstrip('\n')
+    filler = open('./restriction_filler.txt', 'r').readline().rstrip('\n')
 
     # input data
     all_strs = []
@@ -420,8 +400,7 @@ def main():
     # file to output generated oligonucleotides too
     output_file = sys.argv[1]
 
-    # Generate tags for each oligo nucleotide to be created
-    # TODO make user specified amount of tags to be taken
+    # Grab tags from pregenerated file for each oligo to be created
     for line in tag_file:
         all_tags.append(line.rstrip('\n'))
 
@@ -442,26 +421,26 @@ def main():
         all_strs.append(line.rstrip('\n').split('\t')) 
 
     # create list of eSTRs
-    # TODO maybe make list of eSTRs to take a user specified option to determine how many wanted
     strand_eSTRs = find_eSTRs(eSTRs[:430], strands)
     eSTR_alleles = create_alleles(strand_eSTRs, vcf_reader, ref_genome)
-    neg_cntrls = negative_controls(all_strs, eSTRs)
+    # pass in dictionary of STRs as regex to determine what controls are wanted
+    neg_cntrls = negative_controls(all_strs, eSTRs, [{'motif':'T', 'total':30, 'current':0}, {'motif':'AC','total':30, 'current':0},{'motif': '[ACGT]{4}','total':20, 'current':0}])
     neg_alleles = create_alleles(neg_cntrls, vcf_reader, ref_genome)
-    # DEPRECATED TODO read from file and not function fun_alleles = gen_fun(vcf_reader, ref_genome)
-    # TODO Should make sure you dont have to manually input these but they will appear based on what user wants 
-    # Let all be default
-    for seqs in [(neg_alleles, 'Negative Control'), (eSTR_alleles, 'eSTR')]:
-        oligos.extend(create_oligos(all_tags, filler, seqs[0], flag=seqs[1]))
+    fun_alleles = gen_fun(fun_file)
 
-    filtered_oligos = filter_oligos(oligos)
+    # Generate Oligos with all alleles found
+    all_alleles = [neg_alleles, eSTR_alleles, fun_alleles]
+    flags = ['Negative_Control', 'eSTR', 'Fun']
+    oligos.extend(create_oligos(all_tags, filler, all_alleles, flags=flags))
+
+    # restriction sites expected to be in sequence
+    restriction_sites = [(KpnI, 1), (XbaI, 1), (r'GGCC[ACGT]{5,5}GGCC', 0)]
+
+    # filter and output oligos
+    filtered_oligos = filter_oligos(oligos, restriction_sites)
     output_oligos(filtered_oligos, output_file)
 
 
 if __name__ == '__main__':
     main()
 
-#seq="GTTTGTTTTGTTTGTTTGTTTGTTTGTTTGTTTGTTT"
-#_longest_repeat(seq, "GTTT")
-
-#seq="ATATATATATATATGTATAT"
-#_longest_repeat(seq, "AT")
