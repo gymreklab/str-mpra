@@ -1,0 +1,74 @@
+rule all:
+    input:
+         "barcodes/barcode_assoc_table.pass.tab"
+
+# TODO: don't really need exact match for the other seq. could allow some mismatches
+# do all seqs have as much filler as we ask for?
+rule proc_read1:
+    input:
+        "/storage/agoren/susan/pSTR1_S1_L001_R1_001.fastq.gz"
+    output:
+        "barcodes/read1_barcodes.tab"
+    shell:
+        "./proc_read1.sh {input} > {output}"
+
+rule proc_read2:
+    input:
+        "/storage/agoren/susan/pSTR1_S1_L001_R2_001.fastq.gz"
+    output:
+        "barcodes/read2.fq"
+    shell:
+        "./proc_read2.sh {input} > {output}"
+
+# make special bwa ref with the seqs
+# do the alignment
+rule align:
+    input:
+        "barcodes/read2.fq",
+        "barcodes/mpra_pilot_ref.fa"
+    output:
+        "barcodes/read2.bam"
+    shell:
+        "bwa index {input[1]} && bwa mem {input[1]} {input[0]} | samtools view -bS - > {output}"
+
+rule proc_align:
+    input:
+        "barcodes/read2.bam"
+    output:
+        "barcodes/read2_filtered.tab"
+    shell:
+        "samtools view {input} | grep -w 135M | cut -f 1,3 > {output}"
+
+rule proc_filler:
+    input:
+        "/storage/agoren/susan/pSTR1_S1_L001_R1_001.fastq.gz"
+    output:
+        "barcodes/read1_filler.tab"
+    shell:
+        "./get_filler.sh {input} > {output}"
+
+rule merge_tables:
+    input:
+        "barcodes/read1_filler.tab",
+        "barcodes/read1_barcodes.tab",
+        "barcodes/read2_filtered.tab"
+    output:
+        "barcodes/barcode_assoc_table.tab"
+    shell:
+        "./merge_bc_tables.py {input[0]} {input[1]} {input[2]} > {output}"
+
+rule filter_table:
+    input:
+        "barcodes/barcode_assoc_table.tab"
+    output:
+        "barcodes/barcode_assoc_table.filtered.tab"
+    shell:
+        "./filter_bc_tables.py {input} > {output}"
+
+rule final_table:
+    input:
+        "barcodes/barcode_assoc_table.filtered.tab"
+    output:
+        "barcodes/barcode_assoc_table.pass.tab"
+    shell:
+        "cat {input} | grep PASS | cut -d':' -f 1 > {output}"

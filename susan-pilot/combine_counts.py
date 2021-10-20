@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-UMIMAP = "/storage/mlamkin/data/eSTR-data/randomized_barcode_method/results/pSTR1_S1_L001_umi_map.txt"
+#UMIMAP = "/storage/mlamkin/data/eSTR-data/randomized_barcode_method/results/pSTR1_S1_L001_umi_map.txt"
+UMIMAP = "barcodes/barcode_assoc_table.pass.tab"
 
 import sys
 
@@ -60,7 +61,8 @@ with open(UMIMAP, "r") as f:
 
 sys.stdout.write("\t".join(["UMI", "seqname"]+labels)+"\n")
 for umi in count_dict.keys():
-    items = [umi, umi2seq.get(ReverseComplement(umi), "NA")]
+#    items = [umi, umi2seq.get(ReverseComplement(umi), "NA")]
+    items = [umi, umi2seq.get(umi, "NA")]
     for label in labels:
         items.append(count_dict[umi].get(label, 0))
     sys.stdout.write("\t".join([str(item) for item in items])+"\n")
