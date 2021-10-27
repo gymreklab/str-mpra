@@ -27,5 +27,5 @@ data = data.sort_values("seqname")
 data.to_csv(sys.argv[2], sep="\t", index=False)
 
 # Get a summary
-print(data.groupby("seqname", as_index=False).agg({"ratio.1": np.median, "ratio.2": np.median, "ratio.L": np.median, "UMI": len}))
+print(data.groupby("seqname", as_index=False).agg({"ratio.1": np.mean, "ratio.2": np.mean, "ratio.L": np.mean, "UMI": len}))
 

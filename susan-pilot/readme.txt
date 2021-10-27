@@ -10,3 +10,4 @@ Susan_MPRA/ (from /storage/agoren/susan/Susan_MPRA_211008.tar.gz)
 # Run analysis 
 ./run.sh
 
+# Notebook to analyze allcounts_filtered.tab
