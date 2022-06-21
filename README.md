@@ -1,7 +1,10 @@
 # str-mpra
+
 Design and analysis of STR MPRA experiments
 
-Folders:
-* `design/`: contains scripts for designing oligos
-* `process_iseq_prelim/`: contains scripts for prelim results comparing different enzymes and oligo types
-* `scripts/`: contains scripts for processing fastqs in to counts
+* `design/`: contains info about the MPRA design
+
+* `processing/`: contains workflow for processing sequencing runs and obtaining filtered count data
+
+* `analyses/`: contains scripts and notebooks for performing various analyses
+
