@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 script for performing STR-barcode association 
+v3: directly read in .bam file, filter reads while loading
 """
 
 # Imports 
@@ -8,6 +9,7 @@ import os
 import sys
 import copy
 import gzip
+import pysam
 import argparse
 import matplotlib
 
@@ -66,32 +68,6 @@ def load_R1 (R1_path):
     
     return filt_R1
 
-def load_R2 (R2_path, R2_length):
-    
-    # load aligned R2
-    aln_R2 = pd.read_csv(R2_path, sep="\t", header=None)
-    aln_R2.columns=["read_id", "STR", "CIGAR", "R2"]
-
-    # get seq length 
-    aln_R2["length"] = aln_R2.R2.str.len()
-    
-    # initial read count
-    init_read = len(aln_R2)
-    
-    # filter out read that is shorter than the expected read length 
-    # and does not find a matching STR 
-    aln_R2 = aln_R2.loc[(aln_R2["length"] >= R2_length) 
-                        & (aln_R2["STR"] != '*')]
-    
-    # reads that are filtered 
-    filt_read = init_read - len(aln_R2)
-    
-    print("Out of " + str(init_read) + " read 2, " + str(filt_read) +
-          " reads that are either less than " + str(R2_length) +
-          "bp and/or does not find a matching STR are filtered \n")
-    
-    return aln_R2
-
 def cigar_check (cigar_string, R2_length):
     
     """
@@ -148,24 +124,74 @@ def cigar_check (cigar_string, R2_length):
     
     return check_result
 
-def filter_cigar (read2_df, R2_length):
-    df = copy.deepcopy(read2_df)
+def load_R2 (R2_path, R2_length):
     
-    df['CIGAR'] = df['CIGAR'].apply(cigar_check, args=(R2_length,))
-    perfect_match = str(R2_length) + "M"
-    num_perfect = len(df[df['CIGAR'] == perfect_match])
+    num_filt = 0
+    total_read = 0
+    num_perfect = 0
+    perfect_cig = str(R2_length) + "M"
     
-    df = df[df['CIGAR'] != "failed"]
+    # load aligned R2
+    bam_file = pysam.AlignmentFile(R2_path, mode = 'rb')
+    bam_iter = bam_file.fetch(until_eof = True)
+
+    bam_dict = {
+        "read_id": [],
+        "STR": [],
+        "CIGAR":[],
+        "R2":[],
+        "length":[]
+    }
+    for read in bam_iter:
+        
+        keep_read = False
+        total_read += 1
+        
+        read_id = str(read.qname)
+        STR = str(read.reference_name)
+        cigar_string = str(read.cigarstring)
+        sequence = str(read.query)
+        length = len(sequence)
+        
+        # keep read that is the expected read length 
+        # and does find a matching STR 
+        if (length == R2_length) & ("_STR_" in STR):
+            
+            # keep read that pass the cigar check
+            if cigar_check(cigar_string, R2_length) != "failed":
+                keep_read = True
+                
+                if cigar_string == perfect_cig:
+                    num_perfect += 1
+        
+        if keep_read:       
+            bam_dict["read_id"].append(read_id)
+            bam_dict["STR"].append(STR)
+            bam_dict["CIGAR"].append(cigar_string)
+            bam_dict["R2"].append(sequence)
+            bam_dict["length"].append(length)
+            
+        else:
+            num_filt += 1
+        
+    bam_file.close()
     
-    print(("Among {num_reads} read2s, {perfect_cigar} have a " +
-           "perfect cigar score, and {failed} fail to pass the cigar filter, " +
-           "the final number of read2 remains are {final_num} \n")
-          .format(num_reads=len(read2_df),
-                  perfect_cigar=num_perfect,
-                  failed=len(read2_df) - len(df),
-                  final_num=len(df)))
+    aln_R2 = pd.DataFrame(bam_dict)
     
-    return df
+    txt = ("Out of {total} read 2, {filt} reads that are either " +
+           "less than {expect_len}, and/or does not have " +
+           "a matching STR, and/or fail the cigar check are filtered, " +
+           "resulting in {remain} reads ({percent} %), among which "+
+           "{perfect} reads have a perfect cigar string \n")
+    
+    print(txt.format(total=total_read, filt=num_filt,
+                     expect_len=R2_length, 
+                     remain=len(aln_R2),
+                     percent=("{:.2f}".format((len(aln_R2)/total_read)*100)),
+                     perfect=num_perfect), 
+          flush=True)
+    
+    return aln_R2
 
 def BC_check (in_df):
 
@@ -196,8 +222,10 @@ def remove_dup_BC (check):
     duplicate_barcode = check[check.duplicated('barcode')]
     remove_dup = set(duplicate_barcode.barcode)
     print(str(len(remove_dup)) + " unique barcodes are found to be " +
-          "associated with multiple STRs")
-    print("remove such barcode \n")
+          "associated with multiple STRs", 
+          flush=True)
+    print("remove such barcode \n", 
+          flush=True)
     
     association_df = check[~check["barcode"].isin(remove_dup)]
 
@@ -210,15 +238,17 @@ def filt_occurrence (association_df, thres):
     df = df[df["occurrence"] >= thres]
     print(("{filtered} unique STR-BC pair is found to occur less than {threshold}")
           .format(filtered=(before - len(df)),
-                  threshold=thres))
-    print("remove such STR-BC pair \n")
+                  threshold=thres), 
+          flush=True)
+    print("remove such STR-BC pair \n",
+          flush=True)
     
     return df
 
 def countplot_STRBC_occurrence (association_df, out_dir, fig_suffix=None):
     plt.figure()
     oc = sns.countplot(data=association_df, x="occurrence");
-    plt.title("How many STR-BC paired occurred multiple time?")
+    plt.title("How many STR-BC pairs occurred multiple time?")
     
     oc2 = plt.axes([0.3, 0.3, 0.55, 0.55])
     sns.countplot(data=association_df, x="occurrence", ax = oc2)
@@ -255,7 +285,7 @@ def countplot_multiBC (association_df, out_dir, fig_suffix=None):
     
     # plotting 
     mbc = sns.countplot(data=STR_count, x="count")
-    mbc.set(title="After filtering STR-BC piar with low occurrence,\nhow many barcode is associated with a unique STR?");
+    mbc.set(title="After filtering STR-BC pairs with low occurrence,\nhow many barcode is associated with a unique STR?");
     mbc.set_xlabel("Number of barcode associate with unique STR")
     
     mbc2 = plt.axes([0.3, 0.3, 0.55, 0.55])
@@ -273,7 +303,8 @@ def countplot_multiBC (association_df, out_dir, fig_suffix=None):
     print(txt.format(maxSTR = STR_maxBC,
                      maxSTR_count = STR_maxBC_count,
                      minSTR = STR_minBC,
-                     minSTR_count = STR_minBC_count))
+                     minSTR_count = STR_minBC_count), 
+          flush=True)
         
 def output_association (association_df, out_dir):
 
@@ -282,7 +313,8 @@ def output_association (association_df, out_dir):
                   
     path = out_dir + "association.tsv"
     file = open(path, "w")
-    print("start writing association.tsv")
+    print("start writing association.tsv", 
+          flush=True)
     
     for STR_BC in association_df.STR_BC:
         barcode = STR_BC[1]
@@ -293,7 +325,8 @@ def output_association (association_df, out_dir):
     file.close()
         
     print(str(num_BC) + " unique barcode is matched to " + 
-          str(num_STR) + " unique STR \n")
+          str(num_STR) + " unique STR \n", 
+          flush=True)
 
 def getargs():
     parser = argparse.ArgumentParser()
@@ -302,7 +335,7 @@ def getargs():
     inout_group = parser.add_argument_group("Input/Output")
     inout_group.add_argument("--filtR1", help="Filtered read1 from BC_read_processing.py",
                              type=str, required=True)
-    inout_group.add_argument("--tsvR2", help="Processed read2.tsv from BC_read_processing.py",
+    inout_group.add_argument("--alnR2", help="Aligned read2.bam from BC_read_processing.py",
                              type=str, required=True)
     inout_group.add_argument("--outdir", help="Path to output directory",
                              type=str, required=True)
@@ -332,7 +365,7 @@ def main(args):
     
     # required input and output path
     filt_R1_path = args.filtR1
-    aln_R2_path = args.tsvR2
+    aln_R2_path = args.alnR2
     out_dir = args.outdir
     
     # required filter related parameter 
@@ -363,12 +396,9 @@ def main(args):
     filt_R1 = load_R1(filt_R1_path)
     # load R2
     aln_R2 = load_R2(aln_R2_path, R2_length)
-    
-    # control for CIGAR string
-    cf_aln_R2 = filter_cigar(aln_R2, R2_length)
 
     # merge reamining read 2(STR) with read 1(BC) by read ID on read 2
-    merge = pd.merge(left=cf_aln_R2, right=filt_R1,
+    merge = pd.merge(left=aln_R2, right=filt_R1,
                      how='left', left_on="read_id", right_on="read_id")
     # the amount of R2 without a matching R1
     R2_count = len(merge)
@@ -383,15 +413,13 @@ def main(args):
     association_df = remove_dup_BC(check)
 
     # plot occurrence distribution 
-    countplot_STRBC_occurrence(association_df, out_dir, 
-                               STRBC_occurrence_plot_suffix)
+    countplot_STRBC_occurrence(association_df, out_dir, STRBC_occurrence_plot_suffix)
 
     # filter STR-BC pair with occurrence less than occurrence_thres
     filt_occurrence(association_df, occurrence_thres)
 
     # plot how many STR is associated with multiple BC
-    countplot_multiBC(association_df, out_dir,
-                      multiBC_plot_suffix)
+    countplot_multiBC(association_df, out_dir, multiBC_plot_suffix)
     
     # output
     output_association(association_df, out_dir)

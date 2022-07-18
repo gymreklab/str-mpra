@@ -51,13 +51,19 @@ def check_R1 (sequence, levenshtein_matching_length,
     # check for 2bp exact match after barcode
     if seq_check[:2] == ref_seq[:2]:
         
-        # calculate levenshtein distancing
-        lev_score = Levenshtein.distance(ref_seq, seq_check)
-        # check for leveshtein distancing
-        if lev_score > levenshtein_threshold:
-            # have more mismtach than allowed 
-            # fail the check 
-            return False
+        # if asking for exact match
+        if levenshtein_threshold == 0:
+            if seq_check != ref_seq:
+                return False
+        
+        # other wise calculate levenshtein distancing
+        else:
+            lev_score = Levenshtein.distance(ref_seq, seq_check)
+            # check for leveshtein distancing
+            if lev_score > levenshtein_threshold:
+                # have more mismtach than allowed 
+                # fail the check 
+                return False
         
     else:
     # does not have the 2bp exact match after barcode
@@ -114,7 +120,7 @@ def filter_read (path, file_type, read_type,
     to filter reads and write the filter read 
     to a new read file of the same file type
     parameter:
-        1. R1_path 
+        1. path 
             - path to read file
         2. file_type
             - type of read file, fastq.gz or fastq or fq
@@ -218,8 +224,10 @@ def filter_read (path, file_type, read_type,
                          R = read_type,
                          lev_len = lev_matching_length,
                          lev_thres = lev_threshold,
-                         remain = remained_read))
-        print("finished writing filtered reads to " + out_dir + fname + "\n")
+                         remain = remained_read),
+              flush=True)
+        print("finished writing filtered reads to " + out_dir + fname + "\n",
+              flush=True)
             
     else:
         raise ValueError("File type is not fastq.gz, fastq, or fq")
@@ -249,10 +257,10 @@ def bwamem_alignment (ref_path, read2_path, out_path):
     
     with open(out_path, "w") as bam_file:
         subprocess.call(("bwa mem -t 6 -L 100 -k 8 -O 5 {bwa_ref} {reads} |\
-                         /usr/local/bin/samtools view -bS")
+                         samtools view -bS")
                         .format(bwa_ref = ref_path, 
                                 reads = read2_path), 
-                        shell=True, stdout=bam_file)  
+                        shell=True, stdout=bam_file)
         
 def bam_to_tsv (bam_path, out_path):
         
@@ -266,7 +274,7 @@ def bam_to_tsv (bam_path, out_path):
     """    
     
     with open(out_path, "w") as tsv_file:
-        subprocess.call(("/usr/local/bin/samtools view {bam} | cut -f1,3,6,10")
+        subprocess.call(("samtools view {bam} | cut -f1,3,6,10")
                         .format(bam = bam_path), 
                         shell=True, stdout=tsv_file)  
         
@@ -345,8 +353,8 @@ def main(args):
     R1_fname = "R1" + R1_suffix
     filter_read (R1_path, file_type, "R1",
                  R1_fname, out_dir,
-             R1_lev_matching_length,
-             R1_lev_threshold)
+                 R1_lev_matching_length,
+                 R1_lev_threshold)
 
     # process read 2
     R2_suffix = "_lev" + str(R2_lev_matching_length) + "thres" + str(R2_lev_threshold)
@@ -358,15 +366,19 @@ def main(args):
     
     # alignment on read 2
     out_bam = out_dir + R2_fname + ".bam"
-    print("start aligning read 2 to " + bwa_ref)
+    print("start aligning read 2 to " + bwa_ref, 
+          flush=True)
     bwamem_alignment(bwa_ref, (out_dir + R2_fname + "." + file_type), out_bam)
-    print("alignment done" + "\n")
+    print("alignment done" + "\n", 
+          flush=True)
 
-    # process bam file 
-    out_tsv = out_dir + R2_fname + ".tsv"
-    print("start processing aligning read 2")
-    bam_to_tsv(out_bam, out_tsv)
-    print("read processing done")    
+#     # process bam file 
+#     out_tsv = out_dir + R2_fname + ".tsv"
+#     print("start processing aligning read 2", 
+#           flush=True)
+#     bam_to_tsv(out_bam, out_tsv)
+#     print("read processing done",
+#           flush=True)    
     
     
     

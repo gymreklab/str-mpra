@@ -13,9 +13,9 @@
     --R2_thres 0 \
 
 # Association
-/storage/q5gong/MPRA-Susan/STR-BC_Association_Scripts/STR-BC_Association.py \
+/storage/q5gong/MPRA-Susan/STR-BC_Association_Scripts/STR-BC_Association_v3.py \
     --filtR1 /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/R1_lev5thres0.fastq.gz \
-    --tsvR2 /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/R2_lev16thres0.tsv \
+    --alnR2 /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/R2_lev16thres0.bam \
     --outdir /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/ \
     --lenR1 151 \
     --lenR2 151 \
@@ -34,10 +34,10 @@ diff -q <(zcat /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/ip
           <(zcat /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/read_processing_v2/R2_lev16thres0.fastq.gz) \
     && echo same || echo not_same
     
-# processed tsv
+# bam check
 echo "processed bam check"
-diff -q <(cat /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/ipynb_test/R2_lev16thres0.tsv) \
-          <(cat /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/read_processing_v2/R2_lev16thres0.tsv) \
+diff -q <(cat /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/ipynb_test/R2_lev16thres0.bam) \
+          <(cat /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/read_processing_v2/R2_lev16thres0.bam) \
     && echo same || echo not_same
 
 # association tsv
