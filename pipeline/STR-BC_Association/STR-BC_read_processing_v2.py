@@ -138,13 +138,13 @@ def filter_read (path, file_type, read_type,
               could have  
     """
     # keep tracks of filtering 
-    total_read = -1
-    filtered_read = -1
-    remained_read = -1
+    total_read = -1.0
+    filtered_read = -1.0
+    remained_read = -1.0
     txt = ("{filt} reads are filtered from {total} reads of {R}, " + 
            "with a levenshtein matching length of {lev_len} and " +
            "threshold of {lev_thres}, " + 
-           "resulting in {remain} reads")
+           "resulting in {remain} reads({percent}%).\n")
     
     # read file
     if file_type in ["fastq.gz", "fastq", "fq"]:
@@ -224,7 +224,8 @@ def filter_read (path, file_type, read_type,
                          R = read_type,
                          lev_len = lev_matching_length,
                          lev_thres = lev_threshold,
-                         remain = remained_read),
+                         remain = remained_read,
+                         percent = ("{:.2f}".format((remained_read/total_read)*100))),
               flush=True)
         print("finished writing filtered reads to " + out_dir + fname + "\n",
               flush=True)
@@ -256,7 +257,7 @@ def bwamem_alignment (ref_path, read2_path, out_path):
                         shell=True)
     
     with open(out_path, "w") as bam_file:
-        subprocess.call(("bwa mem -t 6 -L 100 -k 8 -O 5 {bwa_ref} {reads} |\
+        subprocess.call(("bwa mem -t 12 -L 100 -k 8 -O 5 {bwa_ref} {reads} |\
                          samtools view -bS")
                         .format(bwa_ref = ref_path, 
                                 reads = read2_path), 

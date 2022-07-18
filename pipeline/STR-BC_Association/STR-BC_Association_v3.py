@@ -181,7 +181,7 @@ def load_R2 (R2_path, R2_length):
     txt = ("Out of {total} read 2, {filt} reads that are either " +
            "less than {expect_len}, and/or does not have " +
            "a matching STR, and/or fail the cigar check are filtered, " +
-           "resulting in {remain} reads ({percent} %), among which "+
+           "resulting in {remain} reads({percent}%), among which "+
            "{perfect} reads have a perfect cigar string \n")
     
     print(txt.format(total=total_read, filt=num_filt,
@@ -403,8 +403,9 @@ def main(args):
     # the amount of R2 without a matching R1
     R2_count = len(merge)
     R2_no_R1 = int(merge.isnull().sum().R1)
-    print("Out of " + str(R2_count) + " read2s, " + str(R2_no_R1) +
-          " of the reads does not have a read1 with the same read_id\n")
+    print("Out of " + str(R2_count) + " read2s, " + str(R2_no_R1) + 
+          "(" + str("{:.2f}".format((R2_no_R1/R2_count)*100)) + "%)" +
+          " of the reads does not have a read1 with the same read_id and are removed\n")
     # drop the null value
     merge = merge.dropna()
 
