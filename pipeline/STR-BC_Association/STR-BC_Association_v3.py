@@ -393,11 +393,14 @@ def main(args):
     
     # load data 
     # load R1
+    print("start loading R1...\n", flush=True)
     filt_R1 = load_R1(filt_R1_path)
     # load R2
+    print("start loading R2...\n", flush=True)
     aln_R2 = load_R2(aln_R2_path, R2_length)
 
     # merge reamining read 2(STR) with read 1(BC) by read ID on read 2
+    print("start associating R1(BC) to R2(STR)...", flush=True)
     merge = pd.merge(left=aln_R2, right=filt_R1,
                      how='left', left_on="read_id", right_on="read_id")
     # the amount of R2 without a matching R1
@@ -405,21 +408,29 @@ def main(args):
     R2_no_R1 = int(merge.isnull().sum().R1)
     print("Out of " + str(R2_count) + " read2s, " + str(R2_no_R1) + 
           "(" + str("{:.2f}".format((R2_no_R1/R2_count)*100)) + "%)" +
-          " of the reads does not have a read1 with the same read_id and are removed\n")
+          " of the reads does not have a read1 with the same read_id" +
+          "and are removed\n", flush=True)
     # drop the null value
     merge = merge.dropna()
 
     # filter BC associate with multiple STRs
+    print("start checking if a barcode is " + 
+          "associated with multiple STRs...\n", flush=True)
     check = BC_check(merge)
     association_df = remove_dup_BC(check)
 
     # plot occurrence distribution 
+    print("start plotting occurrence distribution...\n", flush=True)
     countplot_STRBC_occurrence(association_df, out_dir, STRBC_occurrence_plot_suffix)
 
     # filter STR-BC pair with occurrence less than occurrence_thres
+    print("start filtering STR-BC pair based on occurrence...\n", flush=True)
     filt_occurrence(association_df, occurrence_thres)
 
     # plot how many STR is associated with multiple BC
+    print("start plotting the number of BC that is associated with " +
+          "a unique STR...\n", 
+          flush=True)
     countplot_multiBC(association_df, out_dir, multiBC_plot_suffix)
     
     # output
