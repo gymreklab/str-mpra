@@ -1,25 +1,22 @@
 #!/bin/bash
 
 # Read processing
-/storage/q5gong/MPRA-Susan/STR-BC_Association_Scripts/STR-BC_read_processing_v2.py \
-    --read1 /storage/q5gong/MPRA-Susan/lz0504/lz_S16_L001_R1_001.fastq.gz \
-    --read2 /storage/q5gong/MPRA-Susan/lz0504/lz_S16_L001_R2_001.fastq.gz \
-    --filetype fastq.gz \
-    --bwaref /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/array_probes_human_fullprobe_151bp.fa \
-    --outdir /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/read_processing_v2/ \
-    --R1_match 5 \
-    --R1_thres 0 \
-    --R2_match 16 \
-    --R2_thres 0 \
+! /storage/q5gong/MPRA-Susan/STR-BC_Association_Scripts/STR-BC_Pre-Processing.py \
+  --read1 /storage/q5gong/MPRA-Susan/lz0504/lz_S16_L001_R1_001.fastq.gz \
+  --read2 /storage/q5gong/MPRA-Susan/lz0504/lz_S16_L001_R2_001.fastq.gz \
+  --filetype fastq.gz \
+  --bwaref /storage/q5gong/MPRA-Susan/array_probes_human_fullprobe_151bp.fa \
+  --outdir /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/read_processing_v2/ \
+  --R1_match 5 \
+  --R1_thres 0 \
+  --R2_match 16 \
+  --R2_thres 0
 
-# Association
-/storage/q5gong/MPRA-Susan/STR-BC_Association_Scripts/STR-BC_Association_v3.py \
-    --filtR1 /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/R1_lev5thres0.fastq.gz \
-    --alnR2 /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/R2_lev16thres0.bam \
-    --outdir /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/ \
-    --lenR1 151 \
-    --lenR2 151 \
-    --occurrence 1 \
+# Association! /storage/q5gong/MPRA-Susan/STR-BC_Association_Scripts/STR-BC_Association_v3.py \
+  --bam /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/read_processing_v2/filtered.bam \
+  --outdir /storage/q5gong/MPRA-Susan/pipeline_testing/STR-BC-association/script_test/ \
+  --lenR2 151 \
+  --occurrence 1
 
 # example of checking
 # processed read 1

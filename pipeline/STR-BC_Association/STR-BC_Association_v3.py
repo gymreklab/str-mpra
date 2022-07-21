@@ -32,42 +32,6 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
 # Helper functions
-def load_R1 (R1_path):
-    
-    # load filtered R1 
-    reads = {"read_id":[],
-             "sequence":[],
-             "quality":[]}
-    
-    if ".gz" in R1_path:
-        with gzip.open(R1_path, "rt") as file:
-            df = pd.read_csv(file, sep='\n', header=None)
-            filt_R1 = pd.DataFrame(df.values.reshape(-1, 4))
-            filt_R1.columns=['read_id', "R1", '+', 'qual']
-            
-        file.close()
-
-    else:
-            df = pd.read_csv(R1_path, sep='\n', header=None)
-            filt_R1 = pd.DataFrame(df.values.reshape(-1, 4))
-            filt_R1.columns=['read_id', "R1", '+', 'qual']
-    
-    # only keep read id and sequence
-    filt_R1 = filt_R1[["read_id", "R1"]]
-    
-    # get seq length
-    filt_R1["length"] = filt_R1.R1.str.len()
-
-    # modify read_id for easier merging 
-    filt_R1["read_id"] = filt_R1.read_id.str[1:]
-    filt_R1_id = filt_R1["read_id"].str.split(" ", expand=True)
-    filt_R1["read_id"] = filt_R1_id[0]
-
-    # obtain barcode for each read
-    filt_R1["barcode"] = filt_R1.R1.str[:20]
-    
-    return filt_R1
-
 def cigar_check (cigar_string, R2_length):
     
     """
@@ -124,181 +88,286 @@ def cigar_check (cigar_string, R2_length):
     
     return check_result
 
-def load_R2 (R2_path, R2_length):
+def num_STR (BC_STR_dict):
+    """
+    count the number of total STRs in the input barcode-STR dictionary
+    """ 
+    STRs = set()
+    for barcode in BC_STR_dict:
+        for STR in BC_STR_dict[barcode]:
+            STRs.add(STR)
     
-    num_filt = 0
-    total_read = 0
-    num_perfect = 0
-    perfect_cig = str(R2_length) + "M"
+    return len(STRs)
+
+def remove_barcode (BC_STR_dict):
+    """
+    remove barcodes from the input barcode-STR dictionary that
+    are not associate with one and only one STR
+    """
+    for barcode in BC_STR_dict.copy():
+        if len(BC_STR_dict[barcode]) != 1:
+            BC_STR_dict.pop(barcode)
+            
+def filt_occurrence (BC_STR_dict, thres):
+    """
+    filter BC-STR pairs from the input barcode-STR dictionary that 
+    fail to pass the occurrence threshold
+    """
+    for barcode in BC_STR_dict.copy():
+        for STR in BC_STR_dict[barcode].copy():
+            occurrence = BC_STR_dict[barcode][STR]
+            if occurrence < thres:
+                BC_STR_dict[barcode].pop(STR)
     
-    # load aligned R2
-    bam_file = pysam.AlignmentFile(R2_path, mode = 'rb')
+    remove_barcode(BC_STR_dict)
+    
+def load_bam (bam_path, expected_length):
+    # output msg
+    read_filt_txt = ("Out of {total} reads, {filt} reads that are either " +
+                     "less than {expect_len}, and/or does not have " +
+                     "a matching STR, and/or fail the cigar check are filtered, " +
+                     "resulting in {remain} reads ({percent} %), among which "+
+                     "{perfect} reads have a perfect cigar string \n")
+    
+    # keep track of read filtering 
+    num_filt = -1
+    remained = -1
+    total_read = -1
+    num_perfect = -1
+    perfect_cig = str(expected_length) + "M"
+
+    # store BC and STR information in the format of 
+    # {barcode: {STR: occurrence}} 
+    BC_STRs = {}
+#     # create a intermediate count.tsv file 
+#     count = open(out_dir + "unfiltered_pair_count.tsv", mode="w")
+    
+    # load aligned reads
+    bam_file = pysam.AlignmentFile(bam_path, mode = 'rb')
     bam_iter = bam_file.fetch(until_eof = True)
 
-    bam_dict = {
-        "read_id": [],
-        "STR": [],
-        "CIGAR":[],
-        "R2":[],
-        "length":[]
-    }
     for read in bam_iter:
-        
+
         keep_read = False
-        total_read += 1
-        
+        # keep track of total reads
+        if total_read == -1:
+            total_read = 1
+        else:
+            total_read += 1
+
+        # obtain read info 
         read_id = str(read.qname)
+        barcode = read_id[-20:]
         STR = str(read.reference_name)
         cigar_string = str(read.cigarstring)
         sequence = str(read.query)
         length = len(sequence)
-        
+
         # keep read that is the expected read length 
         # and does find a matching STR 
-        if (length == R2_length) & ("_STR_" in STR):
-            
+        if (length == expected_length) & ("_STR_" in STR):
+
             # keep read that pass the cigar check
-            if cigar_check(cigar_string, R2_length) != "failed":
+            if cigar_check(cigar_string, expected_length) != "failed":
                 keep_read = True
-                
+
                 if cigar_string == perfect_cig:
-                    num_perfect += 1
-        
-        if keep_read:       
-            bam_dict["read_id"].append(read_id)
-            bam_dict["STR"].append(STR)
-            bam_dict["CIGAR"].append(cigar_string)
-            bam_dict["R2"].append(sequence)
-            bam_dict["length"].append(length)
-            
+                    if num_perfect == -1:
+                        num_perfect = 1
+                    else:
+                        num_perfect += 1
+
+        if keep_read:
+            # keep track of remaining read
+            if remained == -1:
+                remained = 1
+            else:
+                remained += 1
+
+            # count BC and STR
+            if barcode not in BC_STRs:
+                BC_STRs[barcode] = {STR: 1}
+            else:
+                if STR not in BC_STRs[barcode]:
+                    BC_STRs[barcode][STR] = 1
+                else:
+                    BC_STRs[barcode][STR] += 1
+
         else:
-            num_filt += 1
-        
+            # keep track of filtered read
+            if num_filt == -1:
+                num_filt = 1
+            else:
+                num_filt += 1
+
     bam_file.close()
-    
-    aln_R2 = pd.DataFrame(bam_dict)
-    
-    txt = ("Out of {total} read 2, {filt} reads that are either " +
-           "less than {expect_len}, and/or does not have " +
-           "a matching STR, and/or fail the cigar check are filtered, " +
-           "resulting in {remain} reads({percent}%), among which "+
-           "{perfect} reads have a perfect cigar string \n")
-    
-    print(txt.format(total=total_read, filt=num_filt,
-                     expect_len=R2_length, 
-                     remain=len(aln_R2),
-                     percent=("{:.2f}".format((len(aln_R2)/total_read)*100)),
-                     perfect=num_perfect), 
+    print(read_filt_txt.format(total=total_read, filt=num_filt,
+                               expect_len=expected_length, 
+                               remain=remained,
+                               percent=("{:.2f}".format((remained/total_read)*100)),
+                               perfect=num_perfect),
           flush=True)
     
-    return aln_R2
-
-def BC_check (in_df):
-
-    STR_BCs = []
-    BCs = []
-    STRs = []
-    occurrence = []
-
-    for STR, barcode in zip(in_df.STR, in_df.barcode):
-        STR_BC = tuple([STR, barcode])
-
-        if STR_BC not in STR_BCs:
-            STR_BCs.append(STR_BC)
-            BCs.append(barcode)
-            STRs.append(STR)
-            occurrence.append(1)
-        else:
-            occurrence[STR_BCs.index(STR_BC)] += 1
-
-    check = pd.DataFrame({"STR_BC": STR_BCs,
-                          "barcode": BCs, 
-                          "STR": STRs,
-                          "occurrence": occurrence})
+#     print("start creating the unfiltered " +
+#           "BC-STR pair count matrix...", flush=True)
+#     for BC in BC_STRs:
+        
+#         for STR in BC_STRs[BC]:
+#             out = "{pair}\t{occur}\n"
+#             count.write(out.format(pair=tuple([BC, STR]),
+#                                    occur=BC_STRs[BC][STR]))
+        
+#     count.close()
+#     print("finish creating the unfiltered " +
+#           "BC-STR pair count matrix \n", flush=True)
+        
     
-    return check
-
-def remove_dup_BC (check):
-    duplicate_barcode = check[check.duplicated('barcode')]
-    remove_dup = set(duplicate_barcode.barcode)
-    print(str(len(remove_dup)) + " unique barcodes are found to be " +
-          "associated with multiple STRs", 
-          flush=True)
-    print("remove such barcode \n", 
-          flush=True)
+#     BC_STR_df = pd.DataFrame.from_dict(BC_STRs.items())
+#     BC_STR_df.columns = ["BC_STR", "occurrence"]
+#     BC_STR_df[['barcode', 'STR']] = pd.DataFrame(BC_STR_df['BC_STR'].tolist(),
+#                                                  index=BC_STR_df.index)    
     
-    association_df = check[~check["barcode"].isin(remove_dup)]
+    return BC_STRs
 
-    return association_df
-
-def filt_occurrence (association_df, thres):
-    before = len(association_df)
-    df = copy.deepcopy(association_df)
+def filter_BC_STR (BC_STR_dict, occurrence_thres):
+    BC_STRs = copy.deepcopy(BC_STR_dict)
     
-    df = df[df["occurrence"] >= thres]
-    print(("{filtered} unique STR-BC pair is found to occur less than {threshold}")
-          .format(filtered=(before - len(df)),
-                  threshold=thres), 
-          flush=True)
-    print("remove such STR-BC pair \n",
+    #output msg    
+    init_BC_STR_txt = ("{init_barcode} barcodes are captured initially, " +
+                       "associating with a total of {init_STR} STRs \n")
+    remove_dup_txt = ("{removed} barcodes are found to be associated with, " +
+                      "multiple STRs, after removal, {cur_barcode} barcodes " +
+                      "are found to be associated with {cur_STR} STRs \n")
+    filt_ocur_txt = ("{filtered} unique BC-STR pair is found to occur less than " +
+                     "{threshold}, after removal, {fin_barcode} barcodes " +
+                      "are found to be associated with {fin_STR} STRs \n")
+    
+    # record the initial count
+    num_init_barcode = len(set(BC_STRs.keys()))
+    num_init_STR = num_STR(BC_STRs)
+    
+    print(init_BC_STR_txt.format(init_barcode=num_init_barcode,
+                                 init_STR=num_init_STR),
           flush=True)
     
-    return df
+    # remove barcode associate with multiple STRs
+    print("start removing barcodes associate with multiple STRs...",
+          flush=True)
+    remove_barcode(BC_STRs)
+    num_cur_barcode = len(set(BC_STRs.keys()))
+    removed_barcode = num_init_barcode - num_cur_barcode
+    num_cur_STR = num_STR(BC_STRs)
+    
+    print(remove_dup_txt.format(removed=removed_barcode, 
+                                cur_barcode=num_cur_barcode,
+                                cur_STR=num_cur_STR))
 
-def countplot_STRBC_occurrence (association_df, out_dir, fig_suffix=None):
+    # filter on BC-STR pair occurrence
+    print("start filtering on BC-STR pair occurrence...",
+          flush=True)
+    filt_occurrence(BC_STRs, occurrence_thres)
+    num_fin_barcode = len(set(BC_STRs.keys()))
+    removed_barcode = num_cur_barcode - num_fin_barcode
+    num_fin_STR = num_STR(BC_STRs)
+    
+    print(filt_ocur_txt.format(filtered=removed_barcode,
+                               threshold=occurrence_thres,
+                               fin_barcode=num_fin_barcode,
+                               fin_STR=num_fin_STR))
+    
+    return BC_STRs
+
+def countplot_STRBC_occurrence (BC_STR_dict, out_dir, fig_suffix=None):
     plt.figure()
-    oc = sns.countplot(data=association_df, x="occurrence");
-    plt.title("How many STR-BC pairs occurred multiple time?")
-    
+    # generate occurrence list
+    occurrences = []
+    for barcode in BC_STR_dict:
+        for STR in BC_STR_dict[barcode]:
+            occurrences.append(BC_STR_dict[barcode][STR])
+
+    oc = sns.countplot(x=np.array(occurrences));
+    plt.title("How many BC-STR pairs occurred multiple time?")
+
     oc2 = plt.axes([0.3, 0.3, 0.55, 0.55])
-    sns.countplot(data=association_df, x="occurrence", ax = oc2)
+    sns.countplot(x=np.array(occurrences), ax = oc2);
     oc2.set_title('zoom')
     oc2.set_xlabel(None)
     oc2.set_ylabel(None)
     oc2.set_ylim([0,120]);
-    
+
     if fig_suffix is None:
-        plt.savefig(out_dir + 'STR-BC_occurrence.png')
+        plt.savefig(out_dir + 'BC-STR_occurrence.png')
     else:
-        plt.savefig(out_dir + fig_suffix + 'STR-BC_occurrence.png')
-        
-def countplot_multiBC (association_df, out_dir, fig_suffix=None):
+        plt.savefig(out_dir + fig_suffix + 'BC-STR_occurrence.png')
+            
+def STR_count (BC_STR_dict, out_dir):
+    """
+    create a dictionary of {STR: num of barcode associated}
+    """
+    
+    STR_count = {}
+    
+    for barcode in BC_STR_dict:
+        for STR in BC_STR_dict[barcode]:
+            if STR not in STR_count:
+                STR_count[STR] = 1
+            else:
+                STR_count[STR] += 1
+    
+    print("start writing the number of barcode associated with " +
+          "each STR to BC_per_STR.tsv in the format of:\n " + 
+          "STR\t num barcode associated with this STR ",
+          flush=True)
+    
+    path = out_dir + "BC_per_STR.tsv"
+    file = open(path, "w")
+    
+    for STR in STR_count:
+        file.write(STR + "\t" + str(STR_count[STR]))
+    
+    file.close()
+    print("finished writing BC_per_STR.tsv")
+                
+    return STR_count
+
+def countplot_multiBC (STR_count_dict, out_dir, fig_suffix=None):
+    
     plt.figure()
-    STR_count = association_df.STR.value_counts().to_frame().reset_index()
-    STR_count.columns = ["STR", "count"]
-    STR_count["count"].value_counts()
-    # output information
+    STR_df = pd.DataFrame.from_dict(data=STR_count_dict.items())
+    STR_df.columns=["STR", "BC_count"]
+
+    # output msg
     txt = ("The maximum barcode associate with a unique STR is {maxSTR}, " +
            "and there are {maxSTR_count} such unique STR, " +
            "the minimum barcode associate with a unique STR is {minSTR}, " +
-           "and there are {minSTR_count} such unique STR \n")
-    
+           "and there are {minSTR_count} such unique STR")
+
     # maximum barcode associated with 1 unique STR
-    STR_maxBC = association_df.STR.value_counts().max()
+    STR_maxBC = STR_df.BC_count.max()
     # number of such STR
-    STR_maxBC_count = STR_count["count"].value_counts()[STR_maxBC]
-    
+    STR_maxBC_count = STR_df["BC_count"].value_counts()[STR_maxBC]
+
     # minimum barcode associated with 1 unique STR
-    STR_minBC = association_df.STR.value_counts().min()
+    STR_minBC = STR_df.BC_count.min()
     # number of such STR
-    STR_minBC_count = STR_count["count"].value_counts()[STR_minBC]
-    
+    STR_minBC_count = STR_df["BC_count"].value_counts()[STR_minBC]
+
     # plotting 
-    mbc = sns.countplot(data=STR_count, x="count")
-    mbc.set(title="After filtering STR-BC pairs with low occurrence,\nhow many barcode is associated with a unique STR?");
+    mbc = sns.countplot(data=STR_df, x="BC_count")
+    mbc.set(title="After filtering BC-STR pairs with low occurrence,\nhow many barcode is associated with a unique STR?");
     mbc.set_xlabel("Number of barcode associate with unique STR")
-    
+
     mbc2 = plt.axes([0.3, 0.3, 0.55, 0.55])
-    sns.countplot(data=STR_count, x="count", ax = mbc2)
+    sns.countplot(data=STR_df, x="BC_count", ax = mbc2)
     mbc2.set_title('zoom')
     mbc2.set_xlabel(None)
     mbc2.set_ylabel(None)
     mbc2.set_ylim([0,120]);
     
     if fig_suffix is None:
-        plt.savefig(out_dir + 'multi-BC_count.png')
+        plt.savefig(out_dir + 'BC_per_STR.png')
     else:
-        plt.savefig(out_dir + fig_suffix + 'multi-BC_count.png')
+        plt.savefig(out_dir + fig_suffix + 'BC_per_STR.png')
 
     print(txt.format(maxSTR = STR_maxBC,
                      maxSTR_count = STR_maxBC_count,
@@ -306,44 +375,38 @@ def countplot_multiBC (association_df, out_dir, fig_suffix=None):
                      minSTR_count = STR_minBC_count), 
           flush=True)
         
-def output_association (association_df, out_dir):
-
-    num_STR = len(association_df.STR.unique())
-    num_BC = len(association_df.barcode.unique())
-                  
-    path = out_dir + "association.tsv"
-    file = open(path, "w")
-    print("start writing association.tsv", 
+def output_count_and_association (BC_STR_dict, out_dir):
+    
+    print("start writing to association.tsv in the format of:\n " +
+          "barcode\t STR\t occurrence \n",
           flush=True)
     
-    for STR_BC in association_df.STR_BC:
-        barcode = STR_BC[1]
-        STR = STR_BC[0]
-        
-        file.write(barcode + "\t" + STR + "\n")   
+    path = out_dir + "association.tsv"
+    file = open(path, "w")
+    
+    for barcode in BC_STR_dict:
+        for STR in BC_STR_dict[barcode]:
+            occurrence = BC_STR_dict[barcode][STR]
+            out = "{barcode}\t{STR}\t{occur}\n"
+            file.write(out.format(barcode=barcode,
+                                  STR=STR,
+                                  occur=occurrence))   
 
     file.close()
-        
-    print(str(num_BC) + " unique barcode is matched to " + 
-          str(num_STR) + " unique STR \n", 
-          flush=True)
+    print("BC-STR association done")
 
 def getargs():
     parser = argparse.ArgumentParser()
     
     # input file & output directory 
     inout_group = parser.add_argument_group("Input/Output")
-    inout_group.add_argument("--filtR1", help="Filtered read1 from BC_read_processing.py",
-                             type=str, required=True)
-    inout_group.add_argument("--alnR2", help="Aligned read2.bam from BC_read_processing.py",
+    inout_group.add_argument("--bam", help="Aligned filtered.bam from previous pre-processing",
                              type=str, required=True)
     inout_group.add_argument("--outdir", help="Path to output directory",
                              type=str, required=True)
     
     # filter related value 
     filter_group = parser.add_argument_group("Filter related")
-    filter_group.add_argument("--lenR1", help="Expected read length of read1",
-                              type=int, required=True)
     filter_group.add_argument("--lenR2", help="Expected read length of read2",
                               type=int, required=True)
     filter_group.add_argument("--occurrence", help="Minimum required occurence for a unique STR-BC pair",
@@ -364,22 +427,16 @@ def getargs():
 def main(args):
     
     # required input and output path
-    filt_R1_path = args.filtR1
-    aln_R2_path = args.alnR2
+    bam_path = args.bam
     out_dir = args.outdir
     
     # required filter related parameter 
-    R1_length = args.lenR1
-    R2_length = args.lenR2
+    expected_length = args.lenR2
     occurrence_thres = args.occurrence 
 
     # check file existence 
-    if not os.path.exists(filt_R1_path):
-        print("Error: %s does not exist"%filt_R1_path)
-        return 1
-    
-    if not os.path.exists(aln_R2_path):
-        print("Error: %s does not exist"%aln_R2_path)
+    if not os.path.exists(bam_path):
+        print("Error: %s does not exist"%bam_path)
         return 1
     
     if not os.path.exists(os.path.dirname(os.path.abspath(out_dir))):
@@ -392,49 +449,31 @@ def main(args):
     multiBC_plot_suffix = args.multiBC
     
     # load data 
-    # load R1
-    print("start loading R1...\n", flush=True)
-    filt_R1 = load_R1(filt_R1_path)
-    # load R2
-    print("start loading R2...\n", flush=True)
-    aln_R2 = load_R2(aln_R2_path, R2_length)
+    BC_STR = load_bam(bam_path, expected_length)
 
-    # merge reamining read 2(STR) with read 1(BC) by read ID on read 2
-    print("start associating R1(BC) to R2(STR)...", flush=True)
-    merge = pd.merge(left=aln_R2, right=filt_R1,
-                     how='left', left_on="read_id", right_on="read_id")
-    # the amount of R2 without a matching R1
-    R2_count = len(merge)
-    R2_no_R1 = int(merge.isnull().sum().R1)
-    print("Out of " + str(R2_count) + " read2s, " + str(R2_no_R1) + 
-          "(" + str("{:.2f}".format((R2_no_R1/R2_count)*100)) + "%)" +
-          " of the reads does not have a read1 with the same read_id" +
-          "and are removed\n", flush=True)
-    # drop the null value
-    merge = merge.dropna()
-
-    # filter BC associate with multiple STRs
-    print("start checking if a barcode is " + 
-          "associated with multiple STRs...\n", flush=True)
-    check = BC_check(merge)
-    association_df = remove_dup_BC(check)
+    # filtering
+    filt_BC_STR = filter_BC_STR(BC_STR, occurrence_thres)
 
     # plot occurrence distribution 
-    print("start plotting occurrence distribution...\n", flush=True)
-    countplot_STRBC_occurrence(association_df, out_dir, STRBC_occurrence_plot_suffix)
+    print("start plotting occurrence distribution..."
+          , flush=True)
+    countplot_STRBC_occurrence (BC_STR, out_dir, STRBC_occurrence_plot_suffix)
+    print("finished plotting occurrence distribution\n"
+          , flush=True)
 
-    # filter STR-BC pair with occurrence less than occurrence_thres
-    print("start filtering STR-BC pair based on occurrence...\n", flush=True)
-    filt_occurrence(association_df, occurrence_thres)
+    # num barcode per STR
+    STR = STR_count (BC_STR, out_dir)
 
-    # plot how many STR is associated with multiple BC
-    print("start plotting the number of BC that is associated with " +
-          "a unique STR...\n", 
-          flush=True)
-    countplot_multiBC(association_df, out_dir, multiBC_plot_suffix)
-    
+    # plot num barcode per STR
+    print("start plotting the number of barcode that is associated with " +
+          "a unique STR..."
+          ,flush=True)
+    countplot_multiBC (STR, out_dir, multiBC_plot_suffix)
+    print("finished plotting number of barcode per STR\n"
+          , flush=True)
+
     # output
-    output_association(association_df, out_dir)
+    output_count_and_association (BC_STR, out_dir)
     
     
     

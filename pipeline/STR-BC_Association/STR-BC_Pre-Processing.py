@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-script for processing reads for STR-BC association
+script for pre-processing of STR-BC assocition 
 """
 
-# Imports 
+# imports
 import os
 import sys
 import copy
@@ -12,10 +12,7 @@ import argparse
 import subprocess
 import Levenshtein
 
-import numpy as np
-import pandas as pd
-
-# Helper functions
+# helper functions
 def process(lines=None):
     ks = ['read_id', 'seq', 'optional', 'qual']
     return {k: v for k, v in zip(ks, lines)}
@@ -51,19 +48,13 @@ def check_R1 (sequence, levenshtein_matching_length,
     # check for 2bp exact match after barcode
     if seq_check[:2] == ref_seq[:2]:
         
-        # if asking for exact match
-        if levenshtein_threshold == 0:
-            if seq_check != ref_seq:
-                return False
-        
-        # other wise calculate levenshtein distancing
-        else:
-            lev_score = Levenshtein.distance(ref_seq, seq_check)
-            # check for leveshtein distancing
-            if lev_score > levenshtein_threshold:
-                # have more mismtach than allowed 
-                # fail the check 
-                return False
+        # calculate levenshtein distancing
+        lev_score = Levenshtein.distance(ref_seq, seq_check)
+        # check for leveshtein distancing
+        if lev_score > levenshtein_threshold:
+            # have more mismtach than allowed 
+            # fail the check 
+            return False
         
     else:
     # does not have the 2bp exact match after barcode
@@ -112,120 +103,147 @@ def check_R2 (sequence, levenshtein_matching_length,
     # pass the check
     return True
 
-def filter_read (path, file_type, read_type,
-                 out_name, out_dir,
-                 lev_matching_length,
-                 lev_threshold):
+def filter_read (path_R1, path_R2,
+                 file_type, out_dir, 
+                 R1_lev_matching_length,
+                 R1_lev_threshold, 
+                 R2_lev_matching_length,
+                 R2_lev_threshold):
     """
     to filter reads and write the filter read 
     to a new read file of the same file type
     parameter:
-        1. path 
+        1. path_R#
             - path to read file
         2. file_type
             - type of read file, fastq.gz or fastq or fq
         3. read_type
             - type of read, R1 or R2
-        4. out_name
-            - output file name
-        5. out_dir
+        4. out_dir
             - output directory 
-        6. levenshetein_matching_length
+        5. R#_levenshetein_matching_length
             - the length of the sequence that will be 
               used to calculate levenshetein distancing 
-        7. levenshetein_threshold
+        6. R#_levenshetein_threshold
             - maximum levenshetein distance the read 
               could have  
     """
+    
     # keep tracks of filtering 
-    total_read = -1.0
-    filtered_read = -1.0
-    remained_read = -1.0
-    txt = ("{filt} reads are filtered from {total} reads of {R}, " + 
-           "with a levenshtein matching length of {lev_len} and " +
-           "threshold of {lev_thres}, " + 
-           "resulting in {remain} reads({percent}%).\n")
+    total_pair = -1
+    filtered_pair = -1
+    remained_pair = -1
+    
+    # print message
+    txt = ("{filt} pairs of reads are filtered from {total} pairs of reads, " + 
+           "with a levenshtein matching length of {R1_lev_len} and " +
+           "threshold of {R1_lev_thres} for read 1, " + 
+           "and a levenshtein matching length of {R2_lev_len} and " +
+           "threshold of {R2_lev_thres} for read 2, " +
+           "resulting in {remain} pairs of reads({percent}%).")
     
     # read file
     if file_type in ["fastq.gz", "fastq", "fq"]:
         
-        fname = out_name + "." + file_type
+        fname = "filtered" + "." + file_type
         
         if ".gz" in file_type:
             # input file
-            file_in = gzip.open(path, "rt")
+            file_R1 = gzip.open(path_R1, "rt")
+            file_R2 = gzip.open(path_R2, "rt")
             # output file
             file_out = gzip.open(out_dir + fname, "wb")
         else:
             # input file
-            file_in = open(path, "r")
+            file_R1 = open(path_R1, "r")
+            file_R2 = open(path_R2, "r")
             #output file
             file_out = open(out_dir + fname, "w")
             
-        
         # start reading the reads
-        lines = []
-        for line in file_in:
-            lines.append(line.rstrip())
+        lines = 0
+        lines_R1 = []
+        lines_R2 = []
+        for line_R1, line_R2 in zip(file_R1, file_R2):
+            lines_R1.append(line_R1.rstrip())
+            lines_R2.append(line_R2.rstrip())
+            lines += 1
             
-            if len(lines) == 4:
-                # reacord the read
-                record = process(lines)
-                if total_read == -1:
-                    total_read = 1
+            if lines == 4:
+                
+                # record the read
+                record_R1 = process(lines_R1)
+                record_R2 = process(lines_R2)
+                if total_pair == -1:
+                    total_pair = 1
                 else:
-                    total_read += 1
+                    total_pair += 1
 
-                read_id = record["read_id"]
-                seq = record["seq"]
-                sign = record["optional"]
-                qual = record["qual"]
-
+                # record R1
+                R1_id = record_R1["read_id"]
+                R1_seq = record_R1["seq"]
+                R1_sign = record_R1["optional"]
+                R1_qual = record_R1["qual"]
+                
+                # record R2
+                R2_id = record_R2["read_id"]
+                R2_seq = record_R2["seq"]
+                R2_sign = record_R2["optional"]
+                R2_qual = record_R2["qual"]
+                
                 # check the read 
-                if read_type == "R1":       
-                    checked = check_R1(seq, lev_matching_length,
-                                       lev_threshold)
-                if read_type == "R2":
-                    checked = check_R2(seq, lev_matching_length,
-                                       lev_threshold)
-                        
-                if checked:
+                R1_pass = check_R1(R1_seq, R1_lev_matching_length,
+                                    R1_lev_threshold)
+                R2_pass = check_R2(R2_seq, R2_lev_matching_length,
+                                    R2_lev_threshold)
+                
+                if R1_pass & R2_pass:
                     # pass the check
-                    if remained_read == -1:
-                        remained_read = 1
+                    if remained_pair == -1:
+                        remained_pair = 1
                     else:
-                        remained_read += 1
+                        remained_pair += 1
 
                     # write the read to output 
-                    if ".gz" in file_type:
-                        file_out.write((read_id + "\n" + seq + "\n" + 
-                                        sign + "\n" + qual + "\n").encode())
+                    barcode = R1_seq[0:20]
+                    R2_id_lists = list(R2_id.split(" "))
+                    R2_id = (R2_id_lists[0] + ":" + barcode +
+                             " " + R2_id_lists[1])
+                    
+                    
+                    if ".gz" in file_type:                       
+                        file_out.write((R2_id + "\n" + R2_seq + "\n" + 
+                                        R2_sign + "\n" + R2_qual + "\n").encode())
                     else:
-                        file_out.write(read_id + "\n" + seq + "\n" + 
-                                       sign + "\n" + qual + "\n")
+                        file_out.write(R2_id + "\n" + R2_seq + "\n" + 
+                                       R2_sign + "\n" + R2_qual + "\n")
 
                 else:
                     # faile the check
-                    if filtered_read == -1:
-                        filtered_read = 1
+                    if filtered_pair == -1:
+                        filtered_pair = 1
                     else:
-                        filtered_read += 1
+                        filtered_pair += 1
                 
                 # empty the line list 
-                lines = []
+                lines = 0
+                lines_R1 = []
+                lines_R2 = []
         
         # close the files
-        file_in.close()
+        file_R1.close()
+        file_R2.close()
         file_out.close()
         
         # print output message
-        print(txt.format(filt = filtered_read,
-                         total = total_read, 
-                         R = read_type,
-                         lev_len = lev_matching_length,
-                         lev_thres = lev_threshold,
-                         remain = remained_read,
-                         percent = ("{:.2f}".format((remained_read/total_read)*100))),
+        print(txt.format(filt = filtered_pair,
+                         total = total_pair, 
+                         R1_lev_len = R1_lev_matching_length,
+                         R1_lev_thres = R1_lev_threshold,
+                         R2_lev_len = R2_lev_matching_length,
+                         R2_lev_thres = R2_lev_threshold,
+                         remain = remained_pair,
+                         percent = ("{:.2f}".format((remained_pair/total_pair)*100))),
               flush=True)
         print("finished writing filtered reads to " + out_dir + fname + "\n",
               flush=True)
@@ -258,26 +276,10 @@ def bwamem_alignment (ref_path, read2_path, out_path):
     
     with open(out_path, "w") as bam_file:
         subprocess.call(("bwa mem -t 12 -L 100 -k 8 -O 5 {bwa_ref} {reads} |\
-                         samtools view -bS")
+                         /usr/local/bin/samtools view -bS")
                         .format(bwa_ref = ref_path, 
                                 reads = read2_path), 
                         shell=True, stdout=bam_file)
-        
-def bam_to_tsv (bam_path, out_path):
-        
-    """
-    processed the bam file
-    parameter:
-        1. bam_path - path to bam file 
-        2. out_path - path to output processed result 
-    output:
-        processed bam file, stored in tsv format 
-    """    
-    
-    with open(out_path, "w") as tsv_file:
-        subprocess.call(("samtools view {bam} | cut -f1,3,6,10")
-                        .format(bam = bam_path), 
-                        shell=True, stdout=tsv_file)  
         
 def getargs():
     parser = argparse.ArgumentParser()
@@ -348,38 +350,26 @@ def main(args):
         common.WARNING("Error: The output directory {outdir} does not exist"
                        .format(outdir=out_dir))
         return 1
-
-    # process read 1
-    R1_suffix = "_lev" + str(R1_lev_matching_length) + "thres" + str(R1_lev_threshold)
-    R1_fname = "R1" + R1_suffix
-    filter_read (R1_path, file_type, "R1",
-                 R1_fname, out_dir,
+    
+    # process read 
+    print("start filtering reads...", 
+          flush=True)
+    filter_read (R1_path, R2_path,
+                 file_type, out_dir, 
                  R1_lev_matching_length,
-                 R1_lev_threshold)
-
-    # process read 2
-    R2_suffix = "_lev" + str(R2_lev_matching_length) + "thres" + str(R2_lev_threshold)
-    R2_fname = "R2" + R2_suffix
-    filter_read (R2_path, file_type, "R2",
-                 R2_fname, out_dir,
+                 R1_lev_threshold, 
                  R2_lev_matching_length,
                  R2_lev_threshold)
-    
+    print("filtering done" + "\n", flush=True)
+
     # alignment on read 2
-    out_bam = out_dir + R2_fname + ".bam"
-    print("start aligning read 2 to " + bwa_ref, 
+    out_bam = out_dir + "filtered.bam"
+    print("start aligning filtered reads to " + bwa_ref, 
           flush=True)
-    bwamem_alignment(bwa_ref, (out_dir + R2_fname + "." + file_type), out_bam)
+    bwamem_alignment(bwa_ref, (out_dir + "filtered." + file_type), out_bam)
     print("alignment done" + "\n", 
           flush=True)
-
-#     # process bam file 
-#     out_tsv = out_dir + R2_fname + ".tsv"
-#     print("start processing aligning read 2", 
-#           flush=True)
-#     bam_to_tsv(out_bam, out_tsv)
-#     print("read processing done",
-#           flush=True)    
+    
     
     
     
@@ -394,4 +384,4 @@ def run():
         sys.exit(retcode)
 
 if __name__ == "__main__":
-    run()
+    run()    
