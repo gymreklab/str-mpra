@@ -22,7 +22,7 @@ from cigar import Cigar
 
 # set plotting style
 sns.set(font_scale=2, style="ticks")
-plt.rcParams['figure.figsize'] = (20, 12)
+plt.rcParams['figure.figsize'] = (60, 12)
 
 # Allow making plots even with no x-forward
 matplotlib.use('Agg')
@@ -285,22 +285,23 @@ def countplot_STRBC_occurrence (BC_STR_dict, out_dir, fig_suffix=None):
         for STR in BC_STR_dict[barcode]:
             occurrences.append(BC_STR_dict[barcode][STR])
 
-    oc = sns.countplot(x=np.array(occurrences));
+    oc = sns.countplot(x=occurrences);
     plt.title("How many BC-STR pairs occurred multiple time?")
+    plt.xticks(fontsize=8)
 
-    oc2 = plt.axes([0.3, 0.3, 0.55, 0.55])
-    sns.countplot(x=np.array(occurrences), ax = oc2);
-    oc2.set_title('zoom')
-    oc2.set_xlabel(None)
-    oc2.set_ylabel(None)
-    oc2.set_ylim([0,120]);
+#     oc2 = plt.axes([0.3, 0.3, 0.55, 0.55])
+#     sns.countplot(x=occurrences, ax = oc2);
+#     oc2.set_title('zoom')
+#     oc2.set_xlabel(None)
+#     oc2.set_ylabel(None)
+#     oc2.set_ylim([0,120]);
 
     if fig_suffix is None:
         plt.savefig(out_dir + 'BC-STR_occurrence.png')
     else:
         plt.savefig(out_dir + fig_suffix + 'BC-STR_occurrence.png')
             
-def STR_count (BC_STR_dict, out_dir):
+def STR_count (BC_STR_dict, out_dir=False):
     """
     create a dictionary of {STR: num of barcode associated}
     """
@@ -314,21 +315,61 @@ def STR_count (BC_STR_dict, out_dir):
             else:
                 STR_count[STR] += 1
     
-    print("start writing the number of barcode associated with " +
-          "each STR to BC_per_STR.tsv in the format of:\n " + 
-          "STR\t num barcode associated with this STR ",
-          flush=True)
-    
-    path = out_dir + "BC_per_STR.tsv"
-    file = open(path, "w")
-    
-    for STR in STR_count:
-        file.write(STR + "\t" + str(STR_count[STR]))
-    
-    file.close()
-    print("finished writing BC_per_STR.tsv")
+    if out_dir:
+        print("start writing the number of barcode associated with " +
+              "each STR to BC_per_STR.tsv in the format of:\n " + 
+              "STR\t num barcode associated with this STR ",
+              flush=True)
+
+        path = out_dir + "BC_per_STR.tsv"
+        file = open(path, "w")
+
+        for STR in STR_count:
+            file.write(STR + "\t" + str(STR_count[STR]) + "\n")
+
+        file.close()
+        print("finished writing BC_per_STR.tsv\n")
                 
     return STR_count
+
+def filt_num_barcode (BC_STR_dict, STR_count_dict, barcode_thres):
+    BC_STRs = copy.deepcopy(BC_STR_dict)
+    
+    """
+    filter BC-STR pairs from the input barcode-STR dictionary that 
+    fail to pass the occurrence threshold
+    """
+    
+    # record the initial count
+    num_init_barcode = len(set(BC_STRs.keys()))
+    num_init_STR = num_STR(BC_STRs)
+    
+    # filtering
+    for barcode in BC_STRs.copy():
+        for STR in BC_STRs[barcode].copy():
+            num_barcode = STR_count_dict[STR]
+            if num_barcode < barcode_thres:
+                BC_STRs[barcode].pop(STR)
+    
+    remove_barcode(BC_STRs)
+    
+    #output msg
+    filt_bc_txt = ("{filtered} STR is found to have less than " +
+                   "{threshold} barcodes associated with, after removal, "+ 
+                   "{fin_barcode} barcodes are found to be associated with {fin_STR} STRs \n")
+    # filter on BC-STR pair occurrence
+    print("start filtering on num barcode associated per STR...",
+          flush=True)
+    num_fin_barcode = len(set(BC_STRs.keys()))
+    removed_barcode = num_init_barcode - num_fin_barcode
+    num_fin_STR = num_STR(BC_STRs)
+    
+    print(filt_bc_txt.format(filtered=removed_barcode,
+                             threshold=barcode_thres,
+                             fin_barcode=num_fin_barcode,
+                             fin_STR=num_fin_STR))
+    
+    return BC_STRs
 
 def countplot_multiBC (STR_count_dict, out_dir, fig_suffix=None):
     
@@ -354,15 +395,16 @@ def countplot_multiBC (STR_count_dict, out_dir, fig_suffix=None):
 
     # plotting 
     mbc = sns.countplot(data=STR_df, x="BC_count")
-    mbc.set(title="After filtering BC-STR pairs with low occurrence,\nhow many barcode is associated with a unique STR?");
-    mbc.set_xlabel("Number of barcode associate with unique STR")
+    mbc.set(title="Number of unique barcodes associated per unique STR");
+    mbc.set_xlabel("Number of unique barcode")
+    plt.xticks(fontsize=8)
 
-    mbc2 = plt.axes([0.3, 0.3, 0.55, 0.55])
-    sns.countplot(data=STR_df, x="BC_count", ax = mbc2)
-    mbc2.set_title('zoom')
-    mbc2.set_xlabel(None)
-    mbc2.set_ylabel(None)
-    mbc2.set_ylim([0,120]);
+#     mbc2 = plt.axes([0.3, 0.3, 0.55, 0.55])
+#     sns.countplot(data=STR_df, x="BC_count", ax = mbc2)
+#     mbc2.set_title('zoom')
+#     mbc2.set_xlabel(None)
+#     mbc2.set_ylabel(None)
+#     mbc2.set_ylim([0,120]);
     
     if fig_suffix is None:
         plt.savefig(out_dir + 'BC_per_STR.png')
@@ -378,7 +420,7 @@ def countplot_multiBC (STR_count_dict, out_dir, fig_suffix=None):
 def output_count_and_association (BC_STR_dict, out_dir):
     
     print("start writing to association.tsv in the format of:\n " +
-          "barcode\t STR\t occurrence \n",
+          "barcode\t STR\t occurrence",
           flush=True)
     
     path = out_dir + "association.tsv"
@@ -393,7 +435,7 @@ def output_count_and_association (BC_STR_dict, out_dir):
                                   occur=occurrence))   
 
     file.close()
-    print("BC-STR association done")
+    print("finished writing association.tsv \n")
 
 def getargs():
     parser = argparse.ArgumentParser()
@@ -407,9 +449,11 @@ def getargs():
     
     # filter related value 
     filter_group = parser.add_argument_group("Filter related")
-    filter_group.add_argument("--lenR2", help="Expected read length of read2",
+    filter_group.add_argument("--len", help="Expected read length",
                               type=int, required=True)
     filter_group.add_argument("--occurrence", help="Minimum required occurence for a unique STR-BC pair",
+                              type=int, required=True)
+    filter_group.add_argument("--minBarcode", help="Minimum number of unique barcodes required to be associated per STR",
                               type=int, required=True)
     
     # optional suffix for plot
@@ -431,8 +475,9 @@ def main(args):
     out_dir = args.outdir
     
     # required filter related parameter 
-    expected_length = args.lenR2
+    expected_length = args.len
     occurrence_thres = args.occurrence 
+    barcode_thres = args.minBarcode
 
     # check file existence 
     if not os.path.exists(bam_path):
@@ -452,29 +497,30 @@ def main(args):
     BC_STR = load_bam(bam_path, expected_length)
 
     # filtering
-    filt_BC_STR = filter_BC_STR(BC_STR, occurrence_thres)
-
-    # plot occurrence distribution 
-    print("start plotting occurrence distribution..."
-          , flush=True)
-    countplot_STRBC_occurrence (BC_STR, out_dir, STRBC_occurrence_plot_suffix)
-    print("finished plotting occurrence distribution\n"
-          , flush=True)
-
-    # num barcode per STR
-    STR = STR_count (BC_STR, out_dir)
-
-    # plot num barcode per STR
-    print("start plotting the number of barcode that is associated with " +
-          "a unique STR..."
-          ,flush=True)
-    countplot_multiBC (STR, out_dir, multiBC_plot_suffix)
-    print("finished plotting number of barcode per STR\n"
-          , flush=True)
-
+    filt_occurrence = filter_BC_STR(BC_STR, occurrence_thres)
+    init_STR = STR_count(BC_STR)
+    fin_BC_STR = filt_num_barcode(filt_occurrence, init_STR, barcode_thres)
+    
     # output
+    fin_STR = STR_count(fin_BC_STR, out_dir)
     output_count_and_association (BC_STR, out_dir)
     
+    # plot occurrence distribution 
+    print("start plotting occurrence distribution...",
+          flush=True)
+    countplot_STRBC_occurrence (fin_BC_STR, out_dir, STRBC_occurrence_plot_suffix)
+    print("finished plotting occurrence distribution\n",
+          flush=True)
+    
+    # plot num barcode per STR
+    print("start plotting the number of barcode that is associated with " +
+          "a unique STR...",
+          flush=True)
+    countplot_multiBC (fin_STR, out_dir, multiBC_plot_suffix)
+    print("finished plotting number of barcode per STR\n",
+          flush=True)
+
+    print("BC-STR association done")
     
     
     return 0
