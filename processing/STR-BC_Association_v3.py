@@ -108,6 +108,8 @@ def remove_barcode (BC_STR_dict):
         if len(BC_STR_dict[barcode]) != 1:
             BC_STR_dict.pop(barcode)
             
+    return BC_STR_dict
+            
 def filt_occurrence (BC_STR_dict, thres):
     """
     filter BC-STR pairs from the input barcode-STR dictionary that 
@@ -253,10 +255,10 @@ def filter_BC_STR (BC_STR_dict, occurrence_thres):
     # remove barcode associate with multiple STRs
     print("start removing barcodes associate with multiple STRs...",
           flush=True)
-    remove_barcode(BC_STRs)
-    num_cur_barcode = len(set(BC_STRs.keys()))
+    out_dict = remove_barcode(BC_STRs)
+    num_cur_barcode = len(set(out_dict.keys()))
     removed_barcode = num_init_barcode - num_cur_barcode
-    num_cur_STR = num_STR(BC_STRs)
+    num_cur_STR = num_STR(out_dict)
     
     print(remove_dup_txt.format(removed=removed_barcode, 
                                 cur_barcode=num_cur_barcode,
@@ -265,17 +267,17 @@ def filter_BC_STR (BC_STR_dict, occurrence_thres):
     # filter on BC-STR pair occurrence
     print("start filtering on BC-STR pair occurrence...",
           flush=True)
-    filt_occurrence(BC_STRs, occurrence_thres)
-    num_fin_barcode = len(set(BC_STRs.keys()))
+    filt_occurrence(out_dict, occurrence_thres)
+    num_fin_barcode = len(set(out_dict.keys()))
     removed_barcode = num_cur_barcode - num_fin_barcode
-    num_fin_STR = num_STR(BC_STRs)
+    num_fin_STR = num_STR(out_dict)
     
     print(filt_ocur_txt.format(filtered=removed_barcode,
                                threshold=occurrence_thres,
                                fin_barcode=num_fin_barcode,
                                fin_STR=num_fin_STR))
     
-    return BC_STRs
+    return out_dict
 
 def countplot_STRBC_occurrence (BC_STR_dict, out_dir, fig_suffix=None):
     plt.figure()
@@ -351,7 +353,7 @@ def filt_num_barcode (BC_STR_dict, STR_count_dict, barcode_thres):
             if num_barcode < barcode_thres:
                 BC_STRs[barcode].pop(STR)
     
-    remove_barcode(BC_STRs)
+    out_dict = remove_barcode(BC_STRs)
     
     #output msg
     filt_bc_txt = ("{filtered} STR is found to have less than " +
@@ -360,16 +362,16 @@ def filt_num_barcode (BC_STR_dict, STR_count_dict, barcode_thres):
     # filter on BC-STR pair occurrence
     print("start filtering on num barcode associated per STR...",
           flush=True)
-    num_fin_barcode = len(set(BC_STRs.keys()))
+    num_fin_barcode = len(set(out_dict.keys()))
     removed_barcode = num_init_barcode - num_fin_barcode
-    num_fin_STR = num_STR(BC_STRs)
+    num_fin_STR = num_STR(out_dict)
     
     print(filt_bc_txt.format(filtered=removed_barcode,
                              threshold=barcode_thres,
                              fin_barcode=num_fin_barcode,
                              fin_STR=num_fin_STR))
     
-    return BC_STRs
+    return out_dict
 
 def countplot_multiBC (STR_count_dict, out_dir, fig_suffix=None):
     
@@ -498,12 +500,12 @@ def main(args):
 
     # filtering
     filt_occurrence = filter_BC_STR(BC_STR, occurrence_thres)
-    init_STR = STR_count(BC_STR)
+    init_STR = STR_count(filt_occurrence)
     fin_BC_STR = filt_num_barcode(filt_occurrence, init_STR, barcode_thres)
     
     # output
     fin_STR = STR_count(fin_BC_STR, out_dir)
-    output_count_and_association (BC_STR, out_dir)
+    output_count_and_association (fin_BC_STR, out_dir)
     
     # plot occurrence distribution 
     print("start plotting occurrence distribution...",
