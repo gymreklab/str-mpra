@@ -202,7 +202,6 @@ def filter_read (path, file_type,
         # close the files
         file_in.close()
         file_out.close()
-        file_fail.close()
         
         # print output message
         print(txt.format(filt = filtered_read,
@@ -339,8 +338,8 @@ def active_ratio (in_df):
     selected_motifs = list(in_df.motif.value_counts()[in_df.motif.value_counts()>100].index)
     selected_df = in_df[in_df["motif"].isin(selected_motifs)]
     
-    for motif, active_state in zip(in_df["motif"],
-                                   in_df["active"]):
+    for motif, active_state in zip(selected_df["motif"],
+                                   selected_df["active"]):
         if motif not in out_dict:
             out_dict[motif] = {"active": 0, "inactive": 0}
 
@@ -388,10 +387,8 @@ def ratio_pearson_correlation (in_df, rep_int, motif_dict, str_len_dict):
 
         if STR not in out_dict:
             out_dict[STR] = {
-                "beta": 0,
                 "pearson_r": 0,
                 "pearson_pval": 0,
-                "stderr": 0,
                 "motif": "",
                 "STR_type":set(),
                 "bc_count": {},
@@ -406,21 +403,8 @@ def ratio_pearson_correlation (in_df, rep_int, motif_dict, str_len_dict):
     for STR in calculate_dict:
         types = calculate_dict[STR]["type_int"]
         ratios = calculate_dict[STR]["ratios"]
-         
-        #directly calculated pearson_r
-        #out_dict[STR]["pearson_r"] = stats.pearsonr(x=types, y=ratios)[0]
-        #out_dict[STR]["pearson_pval"] = stats.pearsonr(x=types, y=ratios)[1]
-        
-        #use linear regression to caculate:
-        #    1) beta
-        #    2) pearson_r
-        #    3) p-value
-        #    4) standard error  
-        stat_res = stats.linregress(x=types, y=ratios)
-        out_dict[STR]["beta"] = stat_res.slope
-        out_dict[STR]["pearson_r"] = stat_res.rvalue
-        out_dict[STR]["pearson_pval"] = stat_res.pvalue
-        out_dict[STR]["stderr"] = stat_res.stderr
+        out_dict[STR]["pearson_r"] = stats.pearsonr(x=types, y=ratios)[0]
+        out_dict[STR]["pearson_pval"] = stats.pearsonr(x=types, y=ratios)[1]
 
     # select for ones that are in groups of 3 or more
     for STR in list(out_dict.keys()):
@@ -509,7 +493,7 @@ def main(args):
     min_count = args.min_count
     min_barcode = args.min_barcode
     
-    # checking input file existence
+        # checking input file existence
     if not os.path.exists(input_files):
         print("Error: %s does not exist"%input_files)
         return 1
@@ -552,7 +536,7 @@ def main(args):
 
     # checking whether:
     # 1. cDNA list and gDNA list have matched length
-    # 2. matches the input replicate number 
+    # 2. mataches the input replicate number 
     if len(cDNA_names) != len(gDNA_names):
         print("Error: The amount of input cDNA files and gDNA files does not match")
 
@@ -725,17 +709,15 @@ def main(args):
     characterization["str_len"] = characterization["str_len"].fillna(0)
     characterization["str_len"] = characterization["str_len"].astype(int)
     
-    #motif_ratio, selected_characterization = active_ratio(characterization)
-    print("start generating active STR characterization realated .csv file...",
+    motif_ratio, selected_characterization = active_ratio(characterization)
+    print("start generating active STR characterization realated .csv files...",
           flush=True)
     characterization.to_csv(out_dir + "characterization" + ".csv",
                             index=False) 
-    
-    #the following two can be done in separate analysis notebook, hence removed 
-    #motif_ratio.to_csv(out_dir + "motif_ratio" + ".csv",
-    #                   index=False) 
-    #selected_characterization.to_csv(out_dir + "selected_characterization" + ".csv",
-    #                                 index=False)
+    motif_ratio.to_csv(out_dir + "motif_ratio" + ".csv",
+                       index=False) 
+    selected_characterization.to_csv(out_dir + "selected_characterization" + ".csv",
+                                     index=False)
     print("done\n", flush=True)
     
     # obtain TSS and other gene info
