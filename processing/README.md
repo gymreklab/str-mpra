@@ -1,10 +1,22 @@
+## overall comments
+if you want this to be easy to use by other people, you should list what packages need to be installed /
+other environment configuration details. For example, I can't run STR-BC_Pre-Processing.py --help 
+because I don't have Levenshtein, and I don't know what that is.
+if you want other people to be able to use this without talking to you, you should describe what
+these steps do. Example: pre-processing - I get this does some QC, but can you add a comment
+describing what QC its doing?
+
 # MPRA processing 
 - location (snolax): `/storage/MPRA/str-mpra/processing/`
 
 ## Association
-- __Association Read Pre-processing via `STR-BC_Pre-Processing.py`__
+
+what's the difference between read1 and read2? they seem to have different defaults, so I assume
+there's some difference, but I don't know what
+
+- __Association Read Pre-processing via `STR-BC_Pre-Processing.py`__ # minor: I prefer not to have dashes in file names. Can sometimes require the names to be quoted in shell scripts.
     - usage \
-      type `STR-BC_Pre-Processing.py --help` in terminal for detail, below is sample command for modification
+      type `./STR-BC_Pre-Processing.py --help` in terminal for detail, below is sample command for modification
     ```shell
     nohup sh -c -u "/storage/MPRA/str-mpra/processing/STR-BC_Pre-Processing.py \
       --read1 /storage/nextseq_demultiplex/NextSeqDate_Project/MPRA_read1.fastq.gz \
