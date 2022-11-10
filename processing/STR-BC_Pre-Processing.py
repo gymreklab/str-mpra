@@ -59,6 +59,19 @@ def check_R1 (sequence, levenshtein_matching_length,
         # you've already guaranteed that the first two bps exactly match
         # so just need to run
         # lev_score = Levenshtein.distance(ref_seq[2:], seq_check[2:])
+
+
+        # Levenshtein is probably quite slow compared to some other simpler comparison metrics.
+        # If you want to speed this up, is this metric necessary, or can you use a simpler comparison?
+        # Also, I don't know how cleanly Levenshtein is optimized for the best-case scenario
+        # and how often you actually encounter imperfect reads.
+        # If most of your reads are perfect, perhaps
+        # if seq_check == ref_seq:
+        #   continue
+        # else:
+        #   Levenshtein
+        # would be faster?
+
         # calculate levenshtein distancing
         lev_score = Levenshtein.distance(ref_seq, seq_check)
         # check for leveshtein distancing
@@ -188,6 +201,35 @@ def filter_read (path_R1, path_R2,
         lines = 0
         lines_R1 = []
         lines_R2 = []
+        # This for loop is clearly the bottleneck
+        # for loops in python are slow. Loops are much faster in C
+        # but I despise writing in C, and don't expect it to be worth your time
+        # Nothing jumps out to me here as being 'wrong'.
+        # If you decide you want to optimize this, some potential ideas:
+        # Instead of opening files with open(), possibly use mmap? https://docs.python.org/3/library/mmap.html
+        # Some useful reading on mmap:
+        # https://stackoverflow.com/questions/9817233/why-mmap-is-faster-than-sequential-io
+        # https://stackoverflow.com/questions/12383900/does-mmap-really-copy-data-to-the-memory
+        # Another idea is you can use the FastqGeneralIterator from Biopython
+        # instead of reading line by line yourself (Arya suggested this)
+        # http://biopython.org/DIST/docs/tutorial/Tutorial.html#sec%3Alow-level-fasta-fastq
+        #
+        # Some notes:
+        # * I like using other people's code when its useful, but I'm not convinced that biopython
+        # will actually provide any speedup, and I don't think you need all the functionality it provides
+        # * You can use biopython ontop of mmap if both prove to be helpful
+        # * if you want to start reading a file in the middle, I think mmap is the way to go
+        # This is important if you want to run multiple copies of this code in parallel on different chunks
+        # of the file.
+        # * If you start reading a file in the middle, you won't necessarily start on a line break.
+        # So you'll need to start reading at the next read, not exactly where you picked.
+        # Similarly, if you end at a fixed location, you may need to grab the next few bytes to finish
+        # the last line(s) of the read.
+        # * Only go after this if this is a bottleneck. Not worth the time otherwise
+        # * If you decide to try to optimize this, test which ends up being faster. Don't assume
+        # changes are improvements.
+        #                                        _        _
+        # Hopefully some of that's useful to you. \_(^^)_/
         for line_R1, line_R2 in zip(file_R1, file_R2):
             lines_R1.append(line_R1.rstrip())
             lines_R2.append(line_R2.rstrip())
@@ -402,6 +444,7 @@ def main(args):
     out_bam = out_dir + "filtered.bam"
     print("start aligning filtered reads to " + bwa_ref, 
           flush=True)
+    # you don't need the parentheses inside below
     bwamem_alignment(bwa_ref, (out_dir + "filtered." + file_type), out_bam)
     print("alignment done" + "\n", 
           flush=True)
