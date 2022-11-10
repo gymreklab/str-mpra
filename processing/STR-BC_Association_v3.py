@@ -73,8 +73,6 @@ def cigar_check (cigar_string, R2_length):
             for sub_cigar in mid:
                 if ((sub_cigar[1] in ["I", "D"] ) and
                     (sub_cigar[0] < indel_thres)):
-                    # doesn't this get overwritten a few times?
-                    # I don't think this line is working as intended
                     check_result = cigar_string
                 else:
                     # cigar string either have modification 
@@ -159,7 +157,7 @@ def load_bam (bam_path, expected_length):
         else:
             total_read += 1
 
-        # obtain read info
+        # obtain read info 
         read_id = str(read.qname)
         barcode = read_id[-20:]
         STR = str(read.reference_name)
