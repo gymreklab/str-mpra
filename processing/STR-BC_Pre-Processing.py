@@ -201,10 +201,14 @@ def filter_read (path_R1, path_R2,
         lines = 0
         lines_R1 = []
         lines_R2 = []
-        # This for loop is clearly the bottleneck
-        # for loops in python are slow. Loops are much faster in C
+        # This for loop is clearly the bottleneck of this part of the code (though if this part of the code
+        # isn't slow then that doesn't matter).
+        # For loops in python are slow. Loops are much faster in C
         # but I despise writing in C, and don't expect it to be worth your time
         # Nothing jumps out to me here as being 'wrong'.
+        # You'll probably have to parallelize and run multiple processes doing this on
+        # different batches of reads simultaneously. The question is, will that be
+        # cost efficient enough?
         # If you decide you want to optimize this, some potential ideas:
         # Instead of opening files with open(), possibly use mmap? https://docs.python.org/3/library/mmap.html
         # Some useful reading on mmap:
@@ -225,7 +229,9 @@ def filter_read (path_R1, path_R2,
         # So you'll need to start reading at the next read, not exactly where you picked.
         # Similarly, if you end at a fixed location, you may need to grab the next few bytes to finish
         # the last line(s) of the read.
-        # * Only go after this if this is a bottleneck. Not worth the time otherwise
+        # * Are the two files aligned character by charcter or only line by line? If only line by line, then starting in the middle
+        # based on byte position may not work, and you may need an indexing program of some sort.
+        # * Only optimize this if this is a bottleneck. Not worth the time otherwise
         # * If you decide to try to optimize this, test which ends up being faster. Don't assume
         # changes are improvements.
         #                                        _        _
