@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 script for performing STR-barcode association 
 v3: directly read in .bam file, filter reads while loading

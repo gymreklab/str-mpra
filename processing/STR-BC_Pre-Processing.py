@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 script for pre-processing of STR-BC assocition 
 """
