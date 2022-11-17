@@ -3,3 +3,6 @@
 *.bam
 *.pdf
 *~
+.DS_Store
+pipeline/.DS_Store
+pipeline/STR-BC_Association/.DS_Store
