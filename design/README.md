@@ -1,5 +1,6 @@
 # MPRA design
 
+We designed arrays with 100K sequences for both mm10 and hg38 genomes.
 
 Array design files: https://drive.google.com/drive/folders/1ad2QJ2hmWKugiGwwPil3pdxGk1pr4tIz 
 
