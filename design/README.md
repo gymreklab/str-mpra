@@ -2,6 +2,7 @@
 
 
 Array design files: https://drive.google.com/drive/folders/1ad2QJ2hmWKugiGwwPil3pdxGk1pr4tIz 
+See code: https://github.com/mikmaksi/111821_mouse_human_array_design
 
 v4_121321_30bp: v4 array design with 30bp cutoff for homopolymers 
 
