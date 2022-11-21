@@ -51,7 +51,7 @@ def check_read (sequence, read_len,
     exact_match = qc_seq[:levenshtein_matching_length]
     
     # the sequence being checked 
-    seq_check = sequence[20:]
+    seq_check = sequence[20:read_len]
     
     # check for required bp of exact match after barcode
     if seq_check[:levenshtein_matching_length] == exact_match:
