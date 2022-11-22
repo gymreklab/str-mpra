@@ -95,6 +95,28 @@ def GenerateVariableRegion():
 	"""
 	return "XXXXXX" # TODO Not yet implemented
 
+def GetFiller(len_var_reg):
+	"""
+	Generate filler sequence. Compute length
+	based on probelen-(length of all other elements)
+	and grab sequence from GLOBAL_FILLER_SEQ
+
+	Arguments
+	---------
+	len_var_reg : int
+	   Length of the variable region
+
+	Returns
+	-------
+	filler_seq : str
+	   Sequence of the filler to use
+	"""
+	required_elts_len = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
+		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
+	filler_len = PROBE_LEN-len_var_reg-required_elts_len
+	filler_seq = GLOBAL_FILLER_SEQ[0:filler_len]
+	return filler_seq
+
 def GenerateOligo(vreg):
 	"""
 	Generate the oligo based on the variable region given
@@ -109,7 +131,9 @@ def GenerateOligo(vreg):
 	oligo : str
 	   Oligo sequence to include on the array
 	"""
-	return "XXXXXXX" # TODO Not yet implemented
+	filler_seq = GetFiller(len(vreg))
+	oligo = FIVE_PRIME_ADAPT + vreg + GIBSON_ASISI + filler_seq + BSAI_RECOG + GIBSON_BSAI_CUT
+	return oligo
 
 def main():
 	### Set up argument parsing ###
@@ -174,7 +198,7 @@ def main():
 			if ReverseComplement(repeat_unit) != repeat_unit:
 				motifs.append(ReverseComplement(repeat_unit))
 
-			# Loop through allele lengths
+			# Loop through all desired permutations
 			for alen in allele_lengths:
 				for motif in motifs:
 					if args.debug:
@@ -182,7 +206,6 @@ def main():
 					# Step 1: generate the variable flanking + STR region 
 					variable_region = GenerateVariableRegion()
 					# Step 2: Generate the full oligo for both the sequence and the reverse complement
-					# Step 3: output to the file
 					oligo_num = 0
 					for vreg in [variable_region, ReverseComplement(variable_region)]:
 						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
