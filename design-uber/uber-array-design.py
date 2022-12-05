@@ -14,7 +14,7 @@ import argparse
 import os
 import sys
 import pyfaidx
-from utils import ReverseComplement, Canonicalize
+from trtools.utils import utils
 
 # Global variables for oligo construction. These cannot change
 FIVE_PRIME_ADAPT = 'ACTGGCCGCTTGACG'
@@ -177,7 +177,7 @@ def main():
 			chrom = items[0]
 			str_start = int(items[1])
 			str_end = int(items[2])
-			repeat_unit = Canonicalize(items[3])
+			repeat_unit = utils.GetCanonicalMotif(items[3])
 
 			if args.debug:
 				sys.stderr.write("Processing %s:%s-%s repeat unit=%s\n"%(chrom, str_start, \
@@ -195,8 +195,8 @@ def main():
 			num_rpt_lengths = TOTAL_LENGTHS[len(repeat_unit)]
 			allele_lengths = GetAlleleLengths(num_rpt_lengths, len(repeat_unit))
 			motifs = [repeat_unit] + GetAlternateMotifs(exclude=repeat_unit) + ["random"] + ["random_matchedGC"]
-			if ReverseComplement(repeat_unit) != repeat_unit:
-				motifs.append(ReverseComplement(repeat_unit))
+			if utils.ReverseComplement(repeat_unit) != repeat_unit:
+				motifs.append(utils.ReverseComplement(repeat_unit))
 
 			# Loop through all desired permutations
 			for alen in allele_lengths:
@@ -207,7 +207,7 @@ def main():
 					variable_region = GenerateVariableRegion()
 					# Step 2: Generate the full oligo for both the sequence and the reverse complement
 					oligo_num = 0
-					for vreg in [variable_region, ReverseComplement(variable_region)]:
+					for vreg in [variable_region, utils.ReverseComplement(variable_region)]:
 						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
 						oligo = GenerateOligo(vreg)
 						f_oligo.write(",".join([oligo_name, oligo])+"\n")
