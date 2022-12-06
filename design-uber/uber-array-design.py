@@ -30,6 +30,7 @@ FIVE_PRIME_ADAPT = 'ACTGGCCGCTTGACG'
 GIBSON_ASISI = 'CACTGCGGCTCCTGCGATCGC'
 GLOBAL_FILLER_SEQ = 'TAACCAGGCGTGTTAGCTGCTGTGCTGTCCTACGAGTAAACAGTAGAGTCCGTGGGCACGCGAGCACGGTGAGTCGACTCTGGCCTCATCACCATTTAGTTTGCGCAAGCGCTCTTTTTATAGGACCTGTCTTACATCCCTCATTAACGGAATCGATTACCGGCTAGCGTTGAAATGGAGAAACCGGCTTGCAGTCGAAA'
 BSAI_RECOG = 'GGTCTC'
+AsiSI_RECOG = 'GCGATCGC'
 GIBSON_BSAI_CUT = 'TGTCGATCGCGTCGACGAAC'
 PROBE_LEN = 230
 MAX_STR_LEN = 80
@@ -194,6 +195,26 @@ def GenerateOligo(vreg):
 	oligo = FIVE_PRIME_ADAPT + vreg + GIBSON_ASISI + filler_seq + BSAI_RECOG + GIBSON_BSAI_CUT
 	return oligo
 
+def checkcutsites():
+	"""
+	Check if cutsites to remove the filler sequence are in the oligo
+	
+	Arguments
+	---------
+	oligo : str
+		Oligo sequence to include on the array
+
+	Returns
+	-------
+	Error if the cutsite is found in the oligo	
+	"""	
+	for o in oligo:
+		if AsiSI_RECOG in o:
+			oligo.remove(o)
+		elif BSAI_RECOG in o:
+			oligo.remove(o)
+
+
 def main():
 	### Set up argument parsing ###
 	parser = argparse.ArgumentParser(__doc__)
@@ -286,3 +307,22 @@ def main():
 
 if __name__ == "__main__":
 	main()
+
+	def checkcutsites()
+	"""
+	Check if cutsites to remove the filler sequence are in the oligo
+	
+	Arguments
+	---------
+	oligo : str
+		Oligo sequence to include on the array
+
+	Returns
+	-------
+	Error if the cutsite is found in the oligo	
+	"""	
+	for o in oligo:
+		if AsiSI_RECOG in o:
+			oligo.remove(o)
+		elif BSAI_RECOG in o:
+			oligo.remove(o)
