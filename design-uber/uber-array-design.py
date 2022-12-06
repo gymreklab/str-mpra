@@ -7,13 +7,22 @@ Example command:
    --reffa chr21.fa \
    --rptsbed chr21_test.bed \
    --out chr21_test
+
+
+Questions:
+- do we want integer repeat lengths? e.g. AC*2, AC*3, etc.
+- or we do we want ACAC, ACACA, ACACAC, etc. (incomplete rpt. units)
+- Need to check for cloning sites
+- Check set of alternate motifs
 """
 
 
 import argparse
+import numpy as np
 import os
-import sys
 import pyfaidx
+import sys
+
 from trtools.utils import utils
 
 # Global variables for oligo construction. These cannot change
@@ -23,6 +32,7 @@ GLOBAL_FILLER_SEQ = 'TAACCAGGCGTGTTAGCTGCTGTGCTGTCCTACGAGTAAACAGTAGAGTCCGTGGGCAC
 BSAI_RECOG = 'GGTCTC'
 GIBSON_BSAI_CUT = 'TGTCGATCGCGTCGACGAAC'
 PROBE_LEN = 230
+MAX_STR_LEN = 80
 
 # Other configuration variables that can be played with
 TOTAL_LENGTHS = {1: 10, 2: 15, 3: 25, 4: 20, 5: 16, 6: 13}
@@ -81,19 +91,68 @@ def GetAlternateMotifs(exclude=None):
 	motifs = alt_di_motifs[0:2] + alt_tri_motifs[0:2] + alt_tetra_motifs[0:2]
 	return motifs
 
-def GenerateVariableRegion():
+def GenerateVariableRegion(chrom, str_start, str_end, \
+						alen, ref_motif, motif, maxlen_bp, genome):
 	"""
 	Main function to generate variable regions
 	with STR + context
 
-	TODO: fill out the arguments this will need (ref genome, motif, ...)
+	Arguments
+	---------
+	chrom : str
+	  Chromosome of the STR
+	str_start : int
+	  Start coord of the STR
+	str_end : int
+	  End coord of the STR
+	alen : int
+	  Allele length to generate (in copy number)
+	ref_motif : str
+	  Repeat unit sequence in the reference
+	motif : str
+	  Repeat unit sequence to synthesize
+	maxlen_bp : int
+	  Maximum allele length we will generate (in bp)
+	genome : pyfaidx.Fasta
+	  Reference genome
 
 	Returns
 	-------
 	var_region : str
 	   Variable region
 	"""
-	return "XXXXXX" # TODO Not yet implemented
+
+	### Determine context amount ###
+	required_elts_len = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
+		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
+	max_context_size = PROBE_LEN - required_elts_len - maxlen_bp
+
+	### Extract flanks and STR seq from reference
+	left_flank = str(genome[chrom][str_start-int(np.ceil(max_context_size/2)):str_start]).upper()
+	str_refseq = str(genome[chrom][str_start:str_end]).upper()
+	right_flank = str(genome[chrom][str_end:str_end+int(np.floor(max_context_size/2))]).upper()
+
+	print("left flank=%s maxlen_bp=%s"%(left_flank, maxlen_bp))
+	### Constuct STR region
+	str_region = "" # will fill in with cases below
+
+	# Case 1: the motif is the same as the reference. 
+	# wnat to keep same imperfections as in the reference
+	# to be like the old array
+	if motif == ref_motif:
+		pass # TODO
+
+	# Case 2: the motif is different than the reference
+	# Replace with perfect copies
+	elif "random" not in motif:
+		str_region = motif*alen
+
+	# Case 3: random sequence
+	else:
+		pass # TODO
+
+	### Return entire variable region
+	return left_flank + str_region + right_flank
 
 def GetFiller(len_var_reg):
 	"""
@@ -195,6 +254,9 @@ def main():
 			num_rpt_lengths = TOTAL_LENGTHS[len(repeat_unit)]
 			allele_lengths = GetAlleleLengths(num_rpt_lengths, len(repeat_unit))
 			motifs = [repeat_unit] + GetAlternateMotifs(exclude=repeat_unit) + ["random"] + ["random_matchedGC"]
+			max_motif_len = len([len(m) for m in motifs if "random" not in m])
+			max_bp_len = np.min([MAX_STR_LEN, max(allele_lengths)*max_motif_len])
+
 			if utils.ReverseComplement(repeat_unit) != repeat_unit:
 				motifs.append(utils.ReverseComplement(repeat_unit))
 
@@ -203,8 +265,14 @@ def main():
 				for motif in motifs:
 					if args.debug:
 						sys.stderr.write("   Generating oligos with allele len=%s and motif=%s\n"%(alen, motif))
+					if "random" not in motif and len(motif)*alen>MAX_STR_LEN:
+						if args.debug: sys.stderr.write("      Skipping. Too long!\n")
+						continue
 					# Step 1: generate the variable flanking + STR region 
-					variable_region = GenerateVariableRegion()
+					variable_region = GenerateVariableRegion(chrom, str_start, str_end, \
+															alen, repeat_unit, motif, \
+															max_bp_len, \
+															genome)
 					# Step 2: Generate the full oligo for both the sequence and the reverse complement
 					oligo_num = 0
 					for vreg in [variable_region, utils.ReverseComplement(variable_region)]:
