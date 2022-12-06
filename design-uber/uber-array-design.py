@@ -91,6 +91,50 @@ def GetAlternateMotifs(exclude=None):
 	motifs = alt_di_motifs[0:2] + alt_tri_motifs[0:2] + alt_tetra_motifs[0:2]
 	return motifs
 
+def GenerateRandomSequence(seqlen, gcperc=0.5):
+	"""
+	Generate random sequence
+
+	Arguments
+	---------
+	seqlen : int
+	  Length of the sequence to generate
+	gcperc : flot
+	  GC percentage to target
+
+	Returns
+	-------
+	random_seq : str
+	  Random sequence
+
+	Example
+	-------
+	GenerateRandomSequence(10, gcperc=0.0)
+	> ATTATTATAT
+	"""
+	return "N"*seqlen # TODO
+
+def GetGC(seq):
+	"""
+	Compute the GC percentage of a sequence
+
+	Arguments
+	---------
+	seq : str
+	  Input sequence
+
+	Returns
+	-------
+	gcperc : float
+	  GC percentage of the input sequence
+
+	Example
+	-------
+	GetGC("ACAC")
+	> 0.5
+	"""
+	return 0.5 # TODO
+
 def GenerateVariableRegion(chrom, str_start, str_end, \
 						alen, ref_motif, motif, maxlen_bp, genome):
 	"""
@@ -132,7 +176,6 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 	str_refseq = str(genome[chrom][str_start:str_end]).upper()
 	right_flank = str(genome[chrom][str_end:str_end+int(np.floor(max_context_size/2))]).upper()
 
-	print("left flank=%s maxlen_bp=%s"%(left_flank, maxlen_bp))
 	### Constuct STR region
 	str_region = "" # will fill in with cases below
 
@@ -149,7 +192,11 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 
 	# Case 3: random sequence
 	else:
-		pass # TODO
+		seq_len = len(ref_motif)*alen
+		if motif == "random_matchedGC":
+			str_region = GenerateRandomSequence(seq_len, gc=GetGC(ref_motif))
+		else:
+			str_region = GenerateRandomSequence(seq_len, gc=0.5)
 
 	### Return entire variable region
 	return left_flank + str_region + right_flank
@@ -176,7 +223,7 @@ def GetFiller(len_var_reg):
 	filler_seq = GLOBAL_FILLER_SEQ[0:filler_len]
 	return filler_seq
 
-def GenerateOligo(vreg):
+def GenerateOligo(vreg, debug=False):
 	"""
 	Generate the oligo based on the variable region given
 
@@ -184,6 +231,8 @@ def GenerateOligo(vreg):
 	---------
 	vreg : str
 	   Sequence of the variable region
+	debug : bool
+	   If true, print out debugging info about the oligo
 
 	Returns
 	-------
@@ -192,6 +241,10 @@ def GenerateOligo(vreg):
 	"""
 	filler_seq = GetFiller(len(vreg))
 	oligo = FIVE_PRIME_ADAPT + vreg + GIBSON_ASISI + filler_seq + BSAI_RECOG + GIBSON_BSAI_CUT
+	assert(len(oligo)==PROBE_LEN)
+
+	# TODO if debug, print out helpful messages
+
 	return oligo
 
 def main():
@@ -277,7 +330,7 @@ def main():
 					oligo_num = 0
 					for vreg in [variable_region, utils.ReverseComplement(variable_region)]:
 						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
-						oligo = GenerateOligo(vreg)
+						oligo = GenerateOligo(vreg, debug=args.debug)
 						f_oligo.write(",".join([oligo_name, oligo])+"\n")
 						oligo_num += 1
 
