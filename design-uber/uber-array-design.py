@@ -134,7 +134,14 @@ def GetGC(seq):
 	GetGC("ACAC")
 	> 0.5
 	"""
-	return -1 # TODO
+	strs = ['ACAC', 'TACT']
+	STRLen = 0
+	CGCount = 0
+	for seq in strs:
+		STRLen = len(seq)
+		CGCount = str.count('C','G')
+			
+	return (CGCount/STRLen)
 
 def GenerateVariableRegion(chrom, str_start, str_end, \
 						alen, ref_motif, motif, maxlen_bp, genome):
