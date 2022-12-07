@@ -10,10 +10,8 @@ Example command:
 
 
 Questions:
-- do we want integer repeat lengths? e.g. AC*2, AC*3, etc.
-- or we do we want ACAC, ACACA, ACACAC, etc. (incomplete rpt. units)
 - Check set of alternate motifs
-- Should probably add sequence differences
+- Filter redundant motifs. e.g those with length 0 will be same for all
 """
 
 
@@ -21,6 +19,7 @@ import argparse
 import numpy as np
 import os
 import pyfaidx
+import random
 import sys
 
 from trtools.utils import utils
@@ -113,9 +112,8 @@ def GenerateRandomSequence(seqlen, gcperc=0.5):
 	GenerateRandomSequence(10, gcperc=0.0)
 	> ATTATTATAT
 	"""
-
-	RanSeq = ''.join(random.choices('ATCG', weights = (1-gcperc, 1-gcperc, gcperc, gcperc), k=seqlen))
-	return RanSeq
+	random_seq = ''.join(random.choices('ATCG', weights = ((1-gcperc)/2, (1-gcperc)/2, gcperc/2, gcperc/2), k=seqlen))
+	return random_seq
                    
 
 def GetGC(seq):
@@ -129,7 +127,7 @@ def GetGC(seq):
 
 	Returns
 	-------
-	GCPerc : float
+	gcperc : float
 	  GC percentage of the input sequence
 
 	Example
@@ -137,11 +135,11 @@ def GetGC(seq):
 	GetGC("ACAC")
 	> 0.5
 	"""
-	
+	seq = seq.upper()
 	STRLen = len(seq)
 	CGCount = seq.count('C') + seq.count('G')
-	GCPerc = CGCount/STRLen		
-	return GCPerc
+	gcperc = CGCount/STRLen		
+	return gcperc
 
 def GenerateVariableRegion(chrom, str_start, str_end, \
 						alen, ref_motif, motif, maxlen_bp, genome):
@@ -190,8 +188,19 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 	# Case 1: the motif is the same as the reference. 
 	# wnat to keep same imperfections as in the reference
 	# to be like the old array
-	if motif == ref_motif:
-		pass # TODO
+	if motif == "ref":
+		ref_alen = int((str_end-str_start+1)/len(ref_motif))
+		if alen<ref_alen:
+			# deletion, just remove some number of repeat units from the end
+			delbp = (ref_alen-alen)*len(ref_motif)
+			str_region = str_refseq[0:-1*delbp]
+		elif alen == ref_alen:
+			# same as reference allele
+			str_region = str_refseq
+		else:
+			# insertion: add some number of copies to ref
+			ref_motif_rotation = str_refseq[-1*len(ref_motif):] # take from last len(motif) bp of reference seq
+			str_region = str_refseq + ref_motif_rotation*(alen-ref_alen)
 
 	# Case 2: the motif is different than the reference
 	# Replace with perfect copies
@@ -244,16 +253,13 @@ def GenerateOligo(vreg, debug=False):
 
 	Returns
 	-------
-	oligo : str
-	   Oligo sequence to include on the array
+	oligo_list : list of str
+	   List of oligo sequence components to include on the array
 	"""
 	filler_seq = GetFiller(len(vreg))
-	oligo = FIVE_PRIME_ADAPT + vreg + GIBSON_ASISI + filler_seq + BSAI_RECOG + GIBSON_BSAI_CUT
-	assert(len(oligo)==PROBE_LEN)
-
-	# TODO if debug, print out helpful messages
-
-	return oligo
+	oligo_list = [FIVE_PRIME_ADAPT, vreg, GIBSON_ASISI, filler_seq, BSAI_RECOG, GIBSON_BSAI_CUT]
+	assert(len(''.join(oligo_list))==PROBE_LEN)
+	return oligo_list
 
 def CheckCutSites(oligo):
 	"""
@@ -309,6 +315,7 @@ def main():
 
 	# Set up output file
 	f_oligo = open(args.out + ".oligos.csv", "w")
+	f_split = open(args.out + ".oligos.split.tab", "w")
 
 	# Process one STR locus at a time
 	with open(args.rptsbed, "r") as f:
@@ -335,7 +342,7 @@ def main():
 			# Number of different repeat lengths to generate
 			num_rpt_lengths = TOTAL_LENGTHS[len(repeat_unit)]
 			allele_lengths = GetAlleleLengths(num_rpt_lengths, len(repeat_unit))
-			motifs = [repeat_unit] + GetAlternateMotifs(exclude=repeat_unit) + ["random"] + ["random_matchedGC"]
+			motifs = ["ref"] + [repeat_unit] + GetAlternateMotifs(exclude=repeat_unit) + ["random"] + ["random_matchedGC"]
 			max_motif_len = len([len(m) for m in motifs if "random" not in m])
 			max_bp_len = np.min([MAX_STR_LEN, max(allele_lengths)*max_motif_len])
 
@@ -347,7 +354,7 @@ def main():
 				for motif in motifs:
 					if args.debug:
 						sys.stderr.write("   Generating oligos with allele len=%s and motif=%s\n"%(alen, motif))
-					if "random" not in motif and len(motif)*alen>MAX_STR_LEN:
+					if "random" not in motif and "ref" not in motif and len(motif)*alen>MAX_STR_LEN:
 						if args.debug: sys.stderr.write("      Skipping. Too long!\n")
 						continue
 					# Step 1: generate the variable flanking + STR region 
@@ -362,11 +369,13 @@ def main():
 							if args.debug: sys.stderr.write("    Skipping. Failed cut site check.\n")
 							continue
 						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
-						oligo = GenerateOligo(vreg, debug=args.debug)
-						f_oligo.write(",".join([oligo_name, oligo])+"\n")
+						oligo_list = GenerateOligo(vreg, debug=args.debug)
+						f_oligo.write(",".join([oligo_name, ''.join(oligo_list)])+"\n")
+						f_split.write("\t".join([oligo_name] + oligo_list)+"\n")
 						oligo_num += 1
 
 	f_oligo.close()
+	f_split.close()
 	sys.exit(0)
 
 if __name__ == "__main__":
