@@ -126,7 +126,7 @@ def GetGC(seq):
 
 	Returns
 	-------
-	gcperc : float
+	GCPerc : float
 	  GC percentage of the input sequence
 
 	Example
@@ -134,14 +134,11 @@ def GetGC(seq):
 	GetGC("ACAC")
 	> 0.5
 	"""
-	strs = ['ACAC', 'TACT']
-	STRLen = 0
-	CGCount = 0
-	for seq in strs:
-		STRLen = len(seq)
-		CGCount = str.count('C','G')
-			
-	return (CGCount/STRLen)
+	
+	STRLen = len(seq)
+	CGCount = seq.count('C') + seq.count('G')
+	GCPerc = CGCount/STRLen		
+	return GCPerc
 
 def GenerateVariableRegion(chrom, str_start, str_end, \
 						alen, ref_motif, motif, maxlen_bp, genome):
