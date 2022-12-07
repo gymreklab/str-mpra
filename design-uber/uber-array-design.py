@@ -12,8 +12,8 @@ Example command:
 Questions:
 - do we want integer repeat lengths? e.g. AC*2, AC*3, etc.
 - or we do we want ACAC, ACACA, ACACAC, etc. (incomplete rpt. units)
-- Need to check for cloning sites
 - Check set of alternate motifs
+- Should probably add sequence differences
 """
 
 
@@ -92,6 +92,50 @@ def GetAlternateMotifs(exclude=None):
 	motifs = alt_di_motifs[0:2] + alt_tri_motifs[0:2] + alt_tetra_motifs[0:2]
 	return motifs
 
+def GenerateRandomSequence(seqlen, gcperc=0.5):
+	"""
+	Generate random sequence
+
+	Arguments
+	---------
+	seqlen : int
+	  Length of the sequence to generate
+	gcperc : float (optional)
+	  GC percentage to target
+
+	Returns
+	-------
+	random_seq : str
+	  Random sequence
+
+	Example
+	-------
+	GenerateRandomSequence(10, gcperc=0.0)
+	> ATTATTATAT
+	"""
+	return "N"*seqlen # TODO
+
+def GetGC(seq):
+	"""
+	Compute the GC percentage of a sequence
+
+	Arguments
+	---------
+	seq : str
+	  Input sequence
+
+	Returns
+	-------
+	gcperc : float
+	  GC percentage of the input sequence
+
+	Example
+	-------
+	GetGC("ACAC")
+	> 0.5
+	"""
+	return -1 # TODO
+
 def GenerateVariableRegion(chrom, str_start, str_end, \
 						alen, ref_motif, motif, maxlen_bp, genome):
 	"""
@@ -133,7 +177,6 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 	str_refseq = str(genome[chrom][str_start:str_end]).upper()
 	right_flank = str(genome[chrom][str_end:str_end+int(np.floor(max_context_size/2))]).upper()
 
-	print("left flank=%s maxlen_bp=%s"%(left_flank, maxlen_bp))
 	### Constuct STR region
 	str_region = "" # will fill in with cases below
 
@@ -150,7 +193,11 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 
 	# Case 3: random sequence
 	else:
-		pass # TODO
+		seq_len = len(ref_motif)*alen
+		if motif == "random_matchedGC":
+			str_region = GenerateRandomSequence(seq_len, gcperc=GetGC(ref_motif))
+		else:
+			str_region = GenerateRandomSequence(seq_len, gcperc=0.5)
 
 	### Return entire variable region
 	return left_flank + str_region + right_flank
@@ -177,7 +224,7 @@ def GetFiller(len_var_reg):
 	filler_seq = GLOBAL_FILLER_SEQ[0:filler_len]
 	return filler_seq
 
-def GenerateOligo(vreg):
+def GenerateOligo(vreg, debug=False):
 	"""
 	Generate the oligo based on the variable region given
 
@@ -185,6 +232,8 @@ def GenerateOligo(vreg):
 	---------
 	vreg : str
 	   Sequence of the variable region
+	debug : bool
+	   If true, print out debugging info about the oligo
 
 	Returns
 	-------
@@ -193,27 +242,32 @@ def GenerateOligo(vreg):
 	"""
 	filler_seq = GetFiller(len(vreg))
 	oligo = FIVE_PRIME_ADAPT + vreg + GIBSON_ASISI + filler_seq + BSAI_RECOG + GIBSON_BSAI_CUT
+	assert(len(oligo)==PROBE_LEN)
+
+	# TODO if debug, print out helpful messages
+
 	return oligo
 
-def checkcutsites():
+def CheckCutSites(oligo):
 	"""
 	Check if cutsites to remove the filler sequence are in the oligo
 	
 	Arguments
 	---------
 	oligo : str
-		Oligo sequence to include on the array
+		Oligo sequence to check for cut sites
 
 	Returns
 	-------
-	Error if the cutsite is found in the oligo	
-	"""	
-	for o in oligo:
-		if AsiSI_RECOG in o:
-			oligo.remove(o)
-		elif BSAI_RECOG in o:
-			oligo.remove(o)
-
+	passed : bool
+		True if no cut sites found. else False
+	"""
+	passed = True
+	cutsites_to_check = [AsiSI_RECOG, BSAI_RECOG]
+	for cutsite in cutsites_to_check:
+		if cutsite in oligo:
+			passed = False
+	return passed
 
 def main():
 	### Set up argument parsing ###
@@ -297,8 +351,11 @@ def main():
 					# Step 2: Generate the full oligo for both the sequence and the reverse complement
 					oligo_num = 0
 					for vreg in [variable_region, utils.ReverseComplement(variable_region)]:
+						if not CheckCutSites(FIVE_PRIME_ADAPT + vreg):
+							if args.debug: sys.stderr.write("    Skipping. Failed cut site check.\n")
+							continue
 						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
-						oligo = GenerateOligo(vreg)
+						oligo = GenerateOligo(vreg, debug=args.debug)
 						f_oligo.write(",".join([oligo_name, oligo])+"\n")
 						oligo_num += 1
 
@@ -307,22 +364,3 @@ def main():
 
 if __name__ == "__main__":
 	main()
-
-	def checkcutsites()
-	"""
-	Check if cutsites to remove the filler sequence are in the oligo
-	
-	Arguments
-	---------
-	oligo : str
-		Oligo sequence to include on the array
-
-	Returns
-	-------
-	Error if the cutsite is found in the oligo	
-	"""	
-	for o in oligo:
-		if AsiSI_RECOG in o:
-			oligo.remove(o)
-		elif BSAI_RECOG in o:
-			oligo.remove(o)
