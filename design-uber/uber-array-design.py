@@ -113,7 +113,10 @@ def GenerateRandomSequence(seqlen, gcperc=0.5):
 	GenerateRandomSequence(10, gcperc=0.0)
 	> ATTATTATAT
 	"""
-	return "N"*seqlen # TODO
+
+	RanSeq = ''.join(random.choices('ATCG', weights = (1-gcperc, 1-gcperc, gcperc, gcperc), k=seqlen))
+	return RanSeq
+                   
 
 def GetGC(seq):
 	"""
