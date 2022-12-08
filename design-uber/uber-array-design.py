@@ -91,9 +91,10 @@ def GetAlternateMotifs(exclude=None):
 	motifs = alt_di_motifs[0:2] + alt_tri_motifs[0:2] + alt_tetra_motifs[0:2]
 	return motifs
 
-def GenerateRandomSequence(seqlen, gcperc=0.5):
+def GenerateRandomSequence(seqlen, gcperc=0.5, maxtries=100):
 	"""
-	Generate random sequence
+	Generate random sequence. 
+	Keep trying until we don't have a cut site
 
 	Arguments
 	---------
@@ -101,6 +102,9 @@ def GenerateRandomSequence(seqlen, gcperc=0.5):
 	  Length of the sequence to generate
 	gcperc : float (optional)
 	  GC percentage to target
+	maxtries : int
+	  Maximum times to try to generate a sequence 
+	  that passes with no cut sites
 
 	Returns
 	-------
@@ -112,7 +116,16 @@ def GenerateRandomSequence(seqlen, gcperc=0.5):
 	GenerateRandomSequence(10, gcperc=0.0)
 	> ATTATTATAT
 	"""
-	random_seq = ''.join(random.choices('ATCG', weights = ((1-gcperc)/2, (1-gcperc)/2, gcperc/2, gcperc/2), k=seqlen))
+	passed = False
+	random_seq = ''
+	numtries = 0
+	while not passed:
+		random_seq = ''.join(random.choices('ATCG', weights = ((1-gcperc)/2, (1-gcperc)/2, gcperc/2, gcperc/2), k=seqlen))
+		if CheckCutSites(random_seq): passed = True
+		numtries += 1
+		if numtries > maxtries:
+			sys.stderr.write("Failed to generate a random sequence with no cut sites. Aborting mission...\n")
+			sys.exit(1)
 	return random_seq
                    
 
@@ -313,6 +326,7 @@ def main():
 	# Set up reference genome. Extract with genome[chr][start:end]
 	genome = pyfaidx.Fasta(args.reffa)
 
+	######## First pass ###########
 	# Set up output file
 	f_oligo = open(args.out + ".oligos.csv", "w")
 	f_split = open(args.out + ".oligos.split.tab", "w")
@@ -326,7 +340,7 @@ def main():
 			str_start = int(items[1])
 			str_end = int(items[2])
 			repeat_unit = utils.GetCanonicalMotif(items[3])
-
+			locname="%s_%s_%s_%s"%(chrom, str_start, str_end, repeat_unit)
 			if args.debug:
 				sys.stderr.write("Processing %s:%s-%s repeat unit=%s\n"%(chrom, str_start, \
 						str_end, repeat_unit))
@@ -353,9 +367,9 @@ def main():
 			for alen in allele_lengths:
 				for motif in motifs:
 					if args.debug:
-						sys.stderr.write("   Generating oligos with allele len=%s and motif=%s\n"%(alen, motif))
+						sys.stderr.write("   [%s] Generating oligos with allele len=%s and motif=%s\n"%(locname, alen, motif))
 					if "random" not in motif and "ref" not in motif and len(motif)*alen>MAX_STR_LEN:
-						if args.debug: sys.stderr.write("      Skipping. Too long!\n")
+						sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif))
 						continue
 					# Step 1: generate the variable flanking + STR region 
 					variable_region = GenerateVariableRegion(chrom, str_start, str_end, \
@@ -366,7 +380,7 @@ def main():
 					oligo_num = 0
 					for vreg in [variable_region, utils.ReverseComplement(variable_region)]:
 						if not CheckCutSites(FIVE_PRIME_ADAPT + vreg):
-							if args.debug: sys.stderr.write("    Skipping. Failed cut site check.\n")
+							sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif))
 							continue
 						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
 						oligo_list = GenerateOligo(vreg, debug=args.debug)
@@ -376,6 +390,19 @@ def main():
 
 	f_oligo.close()
 	f_split.close()
+
+	######## Second pass to remove any redundant probes ###########
+	probes = set()
+	f_filt = open(args.out + ".oligos.filtered.csv", "w")
+	with open(args.out + ".oligos.csv", "r") as f:
+		for line in f:
+			probe = line.strip().split(",")[1]
+			if probe in probes:
+				sys.stderr.write("Removing %s. Redundant probe.\n"%line.strip().split(",")[0])
+			else:
+				probes.add(probe)
+				f_filt.write(line.strip()+"\n")
+	f_filt.close()
 	sys.exit(0)
 
 if __name__ == "__main__":
