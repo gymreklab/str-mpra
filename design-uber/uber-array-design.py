@@ -406,6 +406,8 @@ def main():
 	f_split.close()
 
 	######## Second pass to remove any redundant probes ###########
+	filtered = 0
+	kept = 0
 	probes = set()
 	f_filt = open(args.out + ".oligos.filtered.tab", "w")
 	with open(args.out + ".oligos.tab", "r") as f:
@@ -413,9 +415,12 @@ def main():
 			probe = line.strip().split()[1]
 			if probe in probes:
 				if args.debug: sys.stderr.write("Removing %s. Redundant probe.\n"%line.strip().split()[0])
+				filtered += 1
 			else:
 				probes.add(probe)
 				f_filt.write(line.strip()+"\n")
+				kept += 1
+	sys.stderr.write("Kept %s probes. Filtered %s total redundant probes\n"%(kept, filtered))
 	f_filt.close()
 	sys.exit(0)
 
