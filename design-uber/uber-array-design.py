@@ -35,7 +35,7 @@ PROBE_LEN = 230
 MAX_STR_LEN = 80
 
 # Other configuration variables that can be played with
-TOTAL_LENGTHS = {1: 10, 2: 15, 3: 25, 4: 20, 5: 16, 6: 13}
+TOTAL_LENGTHS = {1: 20, 2: 15, 3: 25, 4: 20, 5: 16, 6: 13}
 
 # desired construct for each STR
 # 5'adapter-(var + genomic context)-(gibson_asis)+(filler_bsai_recog)+(gibson_bsai_cut)
@@ -328,12 +328,13 @@ def main():
 
 	######## First pass ###########
 	# Set up output file
-	f_oligo = open(args.out + ".oligos.csv", "w")
+	f_oligo = open(args.out + ".oligos.tab", "w")
 	f_split = open(args.out + ".oligos.split.tab", "w")
 
 	# Process one STR locus at a time
 	with open(args.rptsbed, "r") as f:
 		for line in f:
+			probecount = 0 # keep track of num probes for this STR
 			# Extract relevant info for the STR
 			items = line.strip().split()
 			chrom = items[0]
@@ -367,9 +368,9 @@ def main():
 			for alen in allele_lengths:
 				for motif in motifs:
 					if args.debug:
-						sys.stderr.write("   [%s] Generating oligos with allele len=%s and motif=%s\n"%(locname, alen, motif))
+						if args.debug: sys.stderr.write("   [%s] Generating oligos with allele len=%s and motif=%s\n"%(locname, alen, motif))
 					if "random" not in motif and "ref" not in motif and len(motif)*alen>MAX_STR_LEN:
-						sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif))
+						if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif))
 						continue
 					# Step 1: generate the variable flanking + STR region 
 					variable_region = GenerateVariableRegion(chrom, str_start, str_end, \
@@ -380,25 +381,27 @@ def main():
 					oligo_num = 0
 					for vreg in [variable_region, utils.ReverseComplement(variable_region)]:
 						if not CheckCutSites(FIVE_PRIME_ADAPT + vreg):
-							sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif))
+							if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif))
+							oligo_num += 1 # still ned to increment this
 							continue
 						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
 						oligo_list = GenerateOligo(vreg, debug=args.debug)
-						f_oligo.write(",".join([oligo_name, ''.join(oligo_list)])+"\n")
+						f_oligo.write("\t".join([oligo_name, ''.join(oligo_list)])+"\n")
 						f_split.write("\t".join([oligo_name] + oligo_list)+"\n")
 						oligo_num += 1
-
+						probecount += 1
+			sys.stderr.write("   [%s] Generated %s probes for %s\n"%(locname, probecount, locname))
 	f_oligo.close()
 	f_split.close()
 
 	######## Second pass to remove any redundant probes ###########
 	probes = set()
-	f_filt = open(args.out + ".oligos.filtered.csv", "w")
-	with open(args.out + ".oligos.csv", "r") as f:
+	f_filt = open(args.out + ".oligos.filtered.tab", "w")
+	with open(args.out + ".oligos.tab", "r") as f:
 		for line in f:
-			probe = line.strip().split(",")[1]
+			probe = line.strip().split()[1]
 			if probe in probes:
-				sys.stderr.write("Removing %s. Redundant probe.\n"%line.strip().split(",")[0])
+				if args.debug: sys.stderr.write("Removing %s. Redundant probe.\n"%line.strip().split()[0])
 			else:
 				probes.add(probe)
 				f_filt.write(line.strip()+"\n")
