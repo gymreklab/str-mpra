@@ -155,7 +155,8 @@ def GetGC(seq):
 	return gcperc
 
 def GenerateVariableRegion(chrom, str_start, str_end, \
-						alen, ref_motif, motif, maxlen_bp, genome):
+						alen, ref_motif, motif, maxlen_bp, \
+						max_context_size, genome):
 	"""
 	Main function to generate variable regions
 	with STR + context
@@ -176,6 +177,8 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 	  Repeat unit sequence to synthesize
 	maxlen_bp : int
 	  Maximum allele length we will generate (in bp)
+	max_context_size : int
+	  Maximum context length (bp)
 	genome : pyfaidx.Fasta
 	  Reference genome
 
@@ -183,13 +186,10 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 	-------
 	var_region : str
 	   Variable region
+	match_ref : bool
+	   True if exactly matches ref
 	"""
-
-	### Determine context amount ###
-	required_elts_len = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
-		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
-	max_context_size = PROBE_LEN - required_elts_len - maxlen_bp
-
+	match_ref = False
 	### Extract flanks and STR seq from reference
 	left_flank = str(genome[chrom][str_start-int(np.ceil(max_context_size/2)):str_start]).upper()
 	str_refseq = str(genome[chrom][str_start:str_end]).upper()
@@ -210,6 +210,7 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 		elif alen == ref_alen:
 			# same as reference allele
 			str_region = str_refseq
+			match_ref = True
 		else:
 			# insertion: add some number of copies to ref
 			ref_motif_rotation = str_refseq[-1*len(ref_motif):] # take from last len(motif) bp of reference seq
@@ -229,7 +230,7 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 			str_region = GenerateRandomSequence(seq_len, gcperc=0.5)
 
 	### Return entire variable region
-	return left_flank + str_region + right_flank
+	return (left_flank + str_region + right_flank), match_ref
 
 def GetFiller(len_var_reg):
 	"""
@@ -364,6 +365,12 @@ def main():
 			if utils.ReverseComplement(repeat_unit) != repeat_unit:
 				motifs.append(utils.ReverseComplement(repeat_unit))
 
+			### Determine context amount ###
+			required_elts_len = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
+				len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
+			max_context_size = PROBE_LEN - required_elts_len - max_bp_len
+			if args.debug: sys.stderr.write("   [%s] Context size=%s\n"%(locname, max_context_size))
+
 			# Loop through all desired permutations
 			for alen in allele_lengths:
 				for motif in motifs:
@@ -373,9 +380,9 @@ def main():
 						if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif))
 						continue
 					# Step 1: generate the variable flanking + STR region 
-					variable_region = GenerateVariableRegion(chrom, str_start, str_end, \
+					variable_region, match_ref = GenerateVariableRegion(chrom, str_start, str_end, \
 															alen, repeat_unit, motif, \
-															max_bp_len, \
+															max_bp_len, max_context_size, \
 															genome)
 					# Step 2: Generate the full oligo for both the sequence and the reverse complement
 					oligo_num = 0
@@ -385,12 +392,14 @@ def main():
 							oligo_num += 1 # still ned to increment this
 							continue
 						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
+						if match_ref:
+							oligo_name += "*"
 						oligo_list = GenerateOligo(vreg, debug=args.debug)
 						f_oligo.write("\t".join([oligo_name, ''.join(oligo_list)])+"\n")
 						f_split.write("\t".join([oligo_name] + oligo_list)+"\n")
 						oligo_num += 1
 						probecount += 1
-			sys.stderr.write("   [%s] Generated %s probes for %s\n"%(locname, probecount, locname))
+			sys.stderr.write("   [%s] Generated %s probes for %s. Context len=%s\n"%(locname, probecount, locname, max_context_size))
 	f_oligo.close()
 	f_split.close()
 
