@@ -79,16 +79,18 @@ def GetAlternateMotifs(exclude=None):
 	motifs : list of str
 	   List of alternate motifs to consider
 	"""
+	alt_hom_motifs = ["A"]
 	alt_di_motifs = ["AC", "AT", "AG", "GC"]
 	alt_tri_motifs = ["CCG","AAT","ACG","AAG"]
 	alt_tetra_motifs = ["AAAC","AGAT","AAAT","ACAT"]
 
 	# Remove excluded motif from these lists upfront
 	if exclude is not None:
+		if exclude in alt_hom_motifs: alt_hom_motifs.remove(exclude)
 		if exclude in alt_di_motifs: alt_di_motifs.remove(exclude)
 		if exclude in alt_tri_motifs: alt_tri_motifs.remove(exclude)
 		if exclude in alt_tetra_motifs: alt_tetra_motifs.remove(exclude)
-	motifs = alt_di_motifs[0:2] + alt_tri_motifs[0:2] + alt_tetra_motifs[0:2]
+	motifs = alt_hom_motifs + alt_di_motifs[0:2] + alt_tri_motifs[0:2] + alt_tetra_motifs[0:2]
 	return motifs
 
 def GenerateRandomSequence(seqlen, gcperc=0.5, maxtries=100):
