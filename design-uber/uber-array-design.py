@@ -33,9 +33,10 @@ AsiSI_RECOG = 'GCGATCGC'
 GIBSON_BSAI_CUT = 'TGTCGATCGCGTCGACGAAC'
 PROBE_LEN = 230
 MAX_STR_LEN = 80
+MIN_FILLER_LEN = 0
 
 # Other configuration variables that can be played with
-TOTAL_LENGTHS = {1: 20, 2: 15, 3: 25, 4: 20, 5: 16, 6: 13}
+TOTAL_LENGTHS = {1: 24, 2: 15, 3: 16, 4: 16, 5: 13, 6: 12}
 
 # desired construct for each STR
 # 5'adapter-(var + genomic context)-(gibson_asis)+(filler_bsai_recog)+(gibson_bsai_cut)
@@ -59,15 +60,14 @@ def GetAlleleLengths(num_rpt_lengths, repeat_unit_length):
 	rpt_lengths : list of int
 	   List of repeat lengths to consider
 	"""
+	# For homopolymers only, space them out more
+	if repeat_unit_length == 1:
+		return list(np.arange(0, num_rpt_lengths, 2))
 	return list(range(0, num_rpt_lengths))
 
-# Susan: think about if we want to take the top 2?
-# or randomly choose?
-# Is this an appropriate set of alternate motifs?
 def GetAlternateMotifs(exclude=None):
 	"""
 	Get a list of alternative motifs to consider
-	We will return 2 each of di-, tri-, tetra-
 
 	Arguments
 	---------
@@ -90,7 +90,7 @@ def GetAlternateMotifs(exclude=None):
 		if exclude in alt_di_motifs: alt_di_motifs.remove(exclude)
 		if exclude in alt_tri_motifs: alt_tri_motifs.remove(exclude)
 		if exclude in alt_tetra_motifs: alt_tetra_motifs.remove(exclude)
-	motifs = alt_hom_motifs + alt_di_motifs[0:2] + alt_tri_motifs[0:2] + alt_tetra_motifs[0:2]
+	motifs = alt_hom_motifs + alt_di_motifs[0:1] + alt_tri_motifs[0:1] + alt_tetra_motifs[0:1]
 	return motifs
 
 def GenerateRandomSequence(seqlen, gcperc=0.5, maxtries=100):
@@ -251,8 +251,9 @@ def GetFiller(len_var_reg):
 	   Sequence of the filler to use
 	"""
 	required_elts_len = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
-		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
+		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT) + MIN_FILLER_LEN
 	filler_len = PROBE_LEN-len_var_reg-required_elts_len
+	assert(filler_len >= MIN_FILLER_LEN)
 	filler_seq = GLOBAL_FILLER_SEQ[0:filler_len]
 	return filler_seq
 
@@ -361,8 +362,8 @@ def main():
 			num_rpt_lengths = TOTAL_LENGTHS[len(repeat_unit)]
 			allele_lengths = GetAlleleLengths(num_rpt_lengths, len(repeat_unit))
 			motifs = ["ref"] + [repeat_unit] + GetAlternateMotifs(exclude=repeat_unit) + ["random"] + ["random_matchedGC"]
-			max_motif_len = len([len(m) for m in motifs if "random" not in m])
-			max_bp_len = np.min([MAX_STR_LEN, max(allele_lengths)*max_motif_len])
+			max_motif_len = np.max([len(m) for m in motifs if "random" not in m])
+			max_bp_len = np.min([MAX_STR_LEN, max(allele_lengths)*(max_motif_len+1)]) # add buffer for imperfections in ref
 
 			if utils.ReverseComplement(repeat_unit) != repeat_unit:
 				motifs.append(utils.ReverseComplement(repeat_unit))
@@ -371,14 +372,20 @@ def main():
 			required_elts_len = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
 				len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
 			max_context_size = PROBE_LEN - required_elts_len - max_bp_len
+
 			if args.debug: sys.stderr.write("   [%s] Context size=%s\n"%(locname, max_context_size))
 
 			# Loop through all desired permutations
 			for alen in allele_lengths:
 				for motif in motifs:
+					# Skip some of the random ones, we don't need so many of those
+					if alen%3 != 0 and "random" in motif: continue
 					if args.debug:
 						if args.debug: sys.stderr.write("   [%s] Generating oligos with allele len=%s and motif=%s\n"%(locname, alen, motif))
 					if "random" not in motif and "ref" not in motif and len(motif)*alen>MAX_STR_LEN:
+						if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif))
+						continue
+					if "ref" in motif and len(repeat_unit)*alen>MAX_STR_LEN:
 						if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif))
 						continue
 					# Step 1: generate the variable flanking + STR region 
