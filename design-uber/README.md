@@ -34,5 +34,6 @@ To run:
 ./uber-array-design.py \
 	--reffa GRCh38_full_analysis_set_plus_decoy_hla.fa \
 	--rptsbed uber_str_set.bed \
+	--seed 12345 \
 	--out uber-v1
 ```

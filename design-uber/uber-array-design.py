@@ -227,7 +227,7 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 	# Case 3: random sequence
 	else:
 		seq_len = len(ref_motif)*alen
-		if motif == "random_matchedGC":
+		if motif == "random-matchedGC":
 			str_region = GenerateRandomSequence(seq_len, gcperc=GetGC(ref_motif))
 		else:
 			str_region = GenerateRandomSequence(seq_len, gcperc=0.5)
@@ -311,6 +311,7 @@ def main():
 	parser.add_argument("--out", help="Prefix for output files", \
 		type=str, required=True)
 	# Extra optional arguments
+	parser.add_argument("--seed", help="Set the random seed", type=int)
 	parser.add_argument("--debug", help="Print helpful debug info", action="store_true")
 	## Parse the arguments
 	args = parser.parse_args()
@@ -320,6 +321,10 @@ def main():
 	if not os.path.exists(args.rptsbed):
 		sys.stderr.write("Quitting. Can't find " + args.rptsbed + "!\n")
 		sys.exit(1)
+	# Set the seed
+	if args.seed is not None:
+		random.seed(args.seed)
+		
 	# Check the arguments
 	sys.stderr.write("Building uber array\n")
 	sys.stderr.write("Using reference genome: " + args.reffa + "\n")
@@ -349,18 +354,10 @@ def main():
 				sys.stderr.write("Processing %s:%s-%s repeat unit=%s\n"%(chrom, str_start, \
 						str_end, repeat_unit))
 
-			# Generate the oligos for this STR
-			# Planned permutations (initial planning... this is changing slightly as we actually implement it)
-			# Different total repeat lengths (homo=10, di=15, tri=25, tetra=20, penta=16, hexa=13)
-			# Change motif (6 total, 2 different each of di-, tri-, tetra-)
-			# Random sequence of different lengths (2 times each length, matched or varying GC content)
-			# Sequence interruptions (will do this later...)
-			# Positive and negative strand for each
-
 			# Number of different repeat lengths to generate
 			num_rpt_lengths = TOTAL_LENGTHS[len(repeat_unit)]
 			allele_lengths = GetAlleleLengths(num_rpt_lengths, len(repeat_unit))
-			motifs = ["ref"] + [repeat_unit] + GetAlternateMotifs(exclude=repeat_unit) + ["random"] + ["random_matchedGC"]
+			motifs = ["ref"] + [repeat_unit] + GetAlternateMotifs(exclude=repeat_unit) + ["random"] + ["random-matchedGC"]
 			max_motif_len = np.max([len(m) for m in motifs if "random" not in m and "ref" not in m])
 			max_bp_len = np.min([MAX_STR_LEN, max(allele_lengths)*(max_motif_len+1)]) # add buffer for imperfections in ref
 
@@ -397,7 +394,7 @@ def main():
 							if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif))
 							oligo_num += 1 # still ned to increment this
 							continue
-						oligo_name = "_".join([chrom, str(str_start), str(str_end), repeat_unit, str(alen), motif, str(oligo_num)])
+						oligo_name = "_".join(["%s:%s%s"%(chrom, str(str_start), str(str_end)), repeat_unit, str(alen), motif, str(oligo_num)])
 						if match_ref:
 							oligo_name += "*"
 						oligo_list = GenerateOligo(vreg, debug=args.debug)
