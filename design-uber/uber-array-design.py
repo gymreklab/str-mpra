@@ -33,10 +33,11 @@ AsiSI_RECOG = 'GCGATCGC'
 GIBSON_BSAI_CUT = 'TGTCGATCGCGTCGACGAAC'
 PROBE_LEN = 230
 MAX_STR_LEN = 80
-MIN_FILLER_LEN = 0
-
+MIN_FILLER_LEN = 5
+REQUIRED_ELTS_LEN = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
+		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
 # Other configuration variables that can be played with
-TOTAL_LENGTHS = {1: 24, 2: 15, 3: 16, 4: 16, 5: 13, 6: 12}
+TOTAL_LENGTHS = {1: 25, 2: 15, 3: 16, 4: 16, 5: 13, 6: 12}
 
 # desired construct for each STR
 # 5'adapter-(var + genomic context)-(gibson_asis)+(filler_bsai_recog)+(gibson_bsai_cut)
@@ -250,9 +251,7 @@ def GetFiller(len_var_reg):
 	filler_seq : str
 	   Sequence of the filler to use
 	"""
-	required_elts_len = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
-		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT) + MIN_FILLER_LEN
-	filler_len = PROBE_LEN-len_var_reg-required_elts_len
+	filler_len = PROBE_LEN-len_var_reg-REQUIRED_ELTS_LEN
 	assert(filler_len >= MIN_FILLER_LEN)
 	filler_seq = GLOBAL_FILLER_SEQ[0:filler_len]
 	return filler_seq
@@ -362,16 +361,14 @@ def main():
 			num_rpt_lengths = TOTAL_LENGTHS[len(repeat_unit)]
 			allele_lengths = GetAlleleLengths(num_rpt_lengths, len(repeat_unit))
 			motifs = ["ref"] + [repeat_unit] + GetAlternateMotifs(exclude=repeat_unit) + ["random"] + ["random_matchedGC"]
-			max_motif_len = np.max([len(m) for m in motifs if "random" not in m])
+			max_motif_len = np.max([len(m) for m in motifs if "random" not in m and "ref" not in m])
 			max_bp_len = np.min([MAX_STR_LEN, max(allele_lengths)*(max_motif_len+1)]) # add buffer for imperfections in ref
 
 			if utils.ReverseComplement(repeat_unit) != repeat_unit:
 				motifs.append(utils.ReverseComplement(repeat_unit))
 
 			### Determine context amount ###
-			required_elts_len = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
-				len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
-			max_context_size = PROBE_LEN - required_elts_len - max_bp_len
+			max_context_size = PROBE_LEN - REQUIRED_ELTS_LEN - MIN_FILLER_LEN - max_bp_len
 
 			if args.debug: sys.stderr.write("   [%s] Context size=%s\n"%(locname, max_context_size))
 
