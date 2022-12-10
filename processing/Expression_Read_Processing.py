@@ -618,7 +618,7 @@ def main(args):
     
     # checking if out_dir exists, if not, create the out_dir
     if not os.path.exists(os.path.dirname(out_dir)):
-         os.makedir(os.path.dirname(out_dir))
+         os.mkdir(os.path.dirname(out_dir))
     
     # if processing mode is ALL
     if mode == "ALL":
