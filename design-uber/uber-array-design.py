@@ -37,7 +37,7 @@ MIN_FILLER_LEN = 5
 REQUIRED_ELTS_LEN = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
 		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
 # Other configuration variables that can be played with
-TOTAL_LENGTHS = {1: 25, 2: 15, 3: 16, 4: 16, 5: 13, 6: 12}
+TOTAL_LENGTHS = {1: 20, 2: 15, 3: 16, 4: 16, 5: 13, 6: 11}
 
 # desired construct for each STR
 # 5'adapter-(var + genomic context)-(gibson_asis)+(filler_bsai_recog)+(gibson_bsai_cut)
@@ -304,9 +304,11 @@ def main():
 	# Inputs
 	parser.add_argument("--reffa", help="Reference genome (fasta)", \
 		type=str, required=True)
-	parser.add_argument("--rptsbed", help="List of repeats in bed format. "
+	parser.add_argument("--rptsbed", help="File with list of repeats in bed format. "
 		"Columns: chrom, start, end, rptunit", \
 		type=str, required=True)
+	parser.add_argument("--add-probes", help="File with list of probes to manually include. "
+											"Columns: ID, seq", type=str, required=False)
 	# Outputs
 	parser.add_argument("--out", help="Prefix for output files", \
 		type=str, required=True)
@@ -324,7 +326,7 @@ def main():
 	# Set the seed
 	if args.seed is not None:
 		random.seed(args.seed)
-		
+
 	# Check the arguments
 	sys.stderr.write("Building uber array\n")
 	sys.stderr.write("Using reference genome: " + args.reffa + "\n")
@@ -348,6 +350,7 @@ def main():
 			chrom = items[0]
 			str_start = int(items[1])
 			str_end = int(items[2])
+			str_id = items[4]
 			repeat_unit = utils.GetCanonicalMotif(items[3])
 			locname="%s_%s_%s_%s"%(chrom, str_start, str_end, repeat_unit)
 			if args.debug:
@@ -394,7 +397,7 @@ def main():
 							if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif))
 							oligo_num += 1 # still ned to increment this
 							continue
-						oligo_name = "_".join(["%s:%s%s"%(chrom, str(str_start), str(str_end)), repeat_unit, str(alen), motif, str(oligo_num)])
+						oligo_name = "_".join(["%s:%s%s"%(chrom, str(str_start), str(str_end)), str_id, repeat_unit, str(alen), motif, str(oligo_num)])
 						if match_ref:
 							oligo_name += "*"
 						oligo_list = GenerateOligo(vreg, debug=args.debug)
@@ -421,7 +424,22 @@ def main():
 				probes.add(probe)
 				f_filt.write(line.strip()+"\n")
 				kept += 1
-	sys.stderr.write("Kept %s probes. Filtered %s total redundant probes\n"%(kept, filtered))
+	manually_added = 0
+	if args.add_probes:
+		with open(args.add_probes, "r") as f:
+			for line in f:
+				oligo_id, probe = line.strip().split()
+				if probe in probes:
+					if args.debug: sys.stderr.write("Removing manually added probe %s. Redundant probe.\n"%line.strip().split()[0])
+					filtered += 1
+				else:
+					if args.debug: sys.stderr.write("Keeping manually added probe %s. Redundant probe.\n"%line.strip().split()[0])
+					probes.add(probe)
+					f_filt.write(line.strip()+"\n")
+					kept += 1
+					manually_added += 1
+	sys.stderr.write("Kept %s probes (%s manually added). " 
+					"Filtered %s total redundant probes\n"%(kept, manually_added, filtered))
 	f_filt.close()
 	sys.exit(0)
 

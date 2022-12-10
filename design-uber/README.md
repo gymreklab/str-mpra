@@ -26,6 +26,14 @@ Multiple checks are implemented:
 * Remove redundant probes
 * Remove probes with a repeat region longer than a pre-set maximum
 
+## Extract the old probes for these sequences
+
+```
+cat uber_str_set.bed | cut -f 5 | sort > uber_str_ids.txt
+cat array_probes.tsv| grep hg38 | awk '{print $2 "\t" $2"_"$3"_"$5 "\t" $6}' | \
+	grep -w -f uber_str_ids.txt | cut -f 1,3 > round1_probe_seqs.tab
+```
+
 ## Generating the probes
 
 To run:
@@ -35,5 +43,6 @@ To run:
 	--reffa GRCh38_full_analysis_set_plus_decoy_hla.fa \
 	--rptsbed uber_str_set.bed \
 	--seed 12345 \
-	--out uber-v1
+	--add-probes round1_probe_seqs.tab \
+	--out uber-v2
 ```
