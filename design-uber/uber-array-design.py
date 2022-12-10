@@ -397,7 +397,7 @@ def main():
 							if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif))
 							oligo_num += 1 # still ned to increment this
 							continue
-						oligo_name = "_".join(["%s:%s%s"%(chrom, str(str_start), str(str_end)), str_id, repeat_unit, str(alen), motif, str(oligo_num)])
+						oligo_name = "_".join(["%s:%s:%s"%(chrom, str(str_start), str(str_end)), str_id.replace("_","-"), repeat_unit, str(alen), motif, str(oligo_num)])
 						if match_ref:
 							oligo_name += "*"
 						oligo_list = GenerateOligo(vreg, debug=args.debug)
