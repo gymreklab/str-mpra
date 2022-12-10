@@ -483,13 +483,12 @@ def main(args):
 
     # check file existence 
     if not os.path.exists(bam_path):
-        print("Error: %s does not exist"%bam_path)
+        common.WARNING("Error: %s does not exist"%bam_path)
         return 1
     
-    if not os.path.exists(os.path.dirname(os.path.abspath(out_dir))):
-        common.WARNING("Error: The output directory {outdir} does not exist"
-                       .format(outdir=out_dir))
-        return 1    
+    # checking if out_dir exists, if not, create the out_dir
+    if not os.path.exists(os.path.dirname(out_dir)):
+         os.makedir(os.path.dirname(out_dir))    
     
     # optional suffix for plots
     STRBC_occurrence_plot_suffix = args.occurCount
