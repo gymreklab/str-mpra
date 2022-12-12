@@ -35,7 +35,7 @@ REQUIRED_ELTS_LEN = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
 		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
 
 # Other configuration variables that can be played with
-TOTAL_LENGTHS = {1: 20, 2: 15, 3: 16, 4: 16, 5: 13, 6: 11}
+TOTAL_LENGTHS = {1: 24, 2: 15, 3: 16, 4: 16, 5: 14, 6: 12}
 
 # Motifs to play with
 alt_hom_motifs = ["A"]
@@ -90,8 +90,6 @@ def GetAlleleLengths(num_rpt_lengths, repeat_unit_length):
 	   List of repeat lengths to consider
 	"""
 	# For homopolymers only, space them out more
-	if repeat_unit_length == 1:
-		return list(np.arange(0, num_rpt_lengths, 2))
 	return list(range(0, num_rpt_lengths))
 
 def GetAlternateMotifs(exclude=None):
