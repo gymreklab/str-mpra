@@ -447,7 +447,7 @@ def combine_statistics(betas, correlations, pvals, stderrs):
     
     return final_beta, final_se, final_corr, final_p, num_ele
 
-def stat_data (expressions):
+def stat_data (expressions, rep_num):
     statistics = {}
     for i in range(0, rep_num):
         expression = expressions[i]
@@ -869,6 +869,7 @@ def main(args):
         # pearson correlation calculation and matrix generation
         print("start calculating perason correlation of expression and STR type...",
               flush=True)
+        expressions = []
         for i in range(0, rep_num):
             bc_group = pd.read_csv(out_dir + "rep" + str(i+1) + "_count_matrix.csv")
             bc_group = STR_split(bc_group)
@@ -883,6 +884,8 @@ def main(args):
             expression = expression[expression.columns.drop(['str_id', 'organism'])]
             expression.insert(1, "gene", 
                               expression["gene_id"].map(ens_gene_dict))
+            expressions.append(expression)
+            
             # output matrix
             print("start generating final correlation matrix " + str(i+1) + "...",
                   flush=True)
@@ -892,8 +895,8 @@ def main(args):
         # combined the replicates
         print("start combining the matricies ...",
               flush=True)
-        effect_df = stat_data(expressions)
-        effect.to_csv(out_dir + "combined_results.csv", index="False")
+        effect_df = stat_data(expressions, rep_num)
+        effect_df.to_csv(out_dir + "combined_results.csv", index="False")
         print("done\n", flush=True)
         
     return 0
