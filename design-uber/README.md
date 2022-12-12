@@ -44,5 +44,13 @@ To run:
 	--rptsbed uber_str_set.bed \
 	--seed 12345 \
 	--add-probes round1_probe_seqs.tab \
-	--out uber-v2
+	--out uber-v3
 ```
+
+This outputs the files:
+* `uber-v3.log`: log file with info on the design run
+* `uber-v3.oligos.tab`: raw unfiltered oligos
+* `uber-v3.oligos.split.tab`: raw unfiltered oligos, with the oligo components split by tab
+* `uber-v3.oligos.filtered.tab`: oligos after filtering redundant ones, with optional manually added probes added
+* `uber-v3.oligos.filtered.seqonly.txt`: same as `uber-v3.oligos.filtered.tab` but with only the sequences
+
