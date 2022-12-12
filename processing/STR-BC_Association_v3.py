@@ -61,16 +61,18 @@ def cigar_check (cigar_string, R2_length):
     
     if len(parse_cigar) > expected_length:
         # long cigar string, filtered 
-        check_result = "failed"
+        return "failed"
     else:
         start = parse_cigar[0]
         end = parse_cigar[-1]
         mid = parse_cigar[1:-1]
+        print(mid)
         
         if ((start[1]=="M" and start[0] >= start_M_thres) and
             (end[1]=="M" and end[0] >= end_M_thres)):
             
             for sub_cigar in mid:
+                print(sub_cigar)
                 if ((sub_cigar[1] in ["I", "D"] ) and
                     (sub_cigar[0] < indel_thres)):
                     check_result = cigar_string
@@ -78,13 +80,13 @@ def cigar_check (cigar_string, R2_length):
                     # cigar string either have modification 
                     # other than indel, or the indel is larger
                     # than the corresponding threshold
-                    check_result = "failed"
+                    return "failed"
                 
         else:
             # cigar string does not start and end with 
             # matching sequence that pass corresponding 
             # threshold, filtered
-            check_result = "failed"
+            return "failed"
     
     return check_result
 
