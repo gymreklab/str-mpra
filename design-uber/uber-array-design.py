@@ -7,19 +7,16 @@ Example command:
    --reffa chr21.fa \
    --rptsbed chr21_test.bed \
    --out chr21_test
-
-
-Questions:
-- Check set of alternate motifs
-- Filter redundant motifs. e.g those with length 0 will be same for all
 """
 
 
 import argparse
+import hashlib
 import numpy as np
 import os
 import pyfaidx
 import random
+import subprocess
 import sys
 
 from trtools.utils import utils
@@ -36,8 +33,39 @@ MAX_STR_LEN = 80
 MIN_FILLER_LEN = 5
 REQUIRED_ELTS_LEN = len(FIVE_PRIME_ADAPT) + len(GIBSON_ASISI) + \
 		len(BSAI_RECOG) + len(GIBSON_BSAI_CUT)
+
 # Other configuration variables that can be played with
 TOTAL_LENGTHS = {1: 20, 2: 15, 3: 16, 4: 16, 5: 13, 6: 11}
+
+# Motifs to play with
+alt_hom_motifs = ["A"]
+alt_di_motifs = ["AC", "AT", "AG", "GC"]
+alt_tri_motifs = ["CCG","AAT","ACG","AAG"]
+alt_tetra_motifs = ["AAAC","AGAT","AAAT","ACAT"]
+alt_motif_num = 1
+
+def GetParamSummary():
+	"""
+	Ouptut parameter summary. Keep track of:
+	- total lengths dictionary
+	- list of motifs
+
+	Arguments
+	---------
+
+	Returns
+	-------
+	summary : str
+	   Summary of parameters
+	"""
+	summary = ""
+	summary += "TOTAL_LENGTHS: %s\n"%str(TOTAL_LENGTHS)
+	summary += "alt_hom_motifs: %s\n"%str(alt_hom_motifs)
+	summary += "alt_di_motifs: %s\n"%str(alt_di_motifs)
+	summary += "alt_tri_motifs: %s\n"%str(alt_tri_motifs)
+	summary += "alt_tetra_motifs: %s\n"%str(alt_tetra_motifs)
+	summary += "alt_motif_num: %s\n"%str(alt_motif_num)
+	return summary
 
 # desired construct for each STR
 # 5'adapter-(var + genomic context)-(gibson_asis)+(filler_bsai_recog)+(gibson_bsai_cut)
@@ -80,10 +108,6 @@ def GetAlternateMotifs(exclude=None):
 	motifs : list of str
 	   List of alternate motifs to consider
 	"""
-	alt_hom_motifs = ["A"]
-	alt_di_motifs = ["AC", "AT", "AG", "GC"]
-	alt_tri_motifs = ["CCG","AAT","ACG","AAG"]
-	alt_tetra_motifs = ["AAAC","AGAT","AAAT","ACAT"]
 
 	# Remove excluded motif from these lists upfront
 	if exclude is not None:
@@ -91,7 +115,8 @@ def GetAlternateMotifs(exclude=None):
 		if exclude in alt_di_motifs: alt_di_motifs.remove(exclude)
 		if exclude in alt_tri_motifs: alt_tri_motifs.remove(exclude)
 		if exclude in alt_tetra_motifs: alt_tetra_motifs.remove(exclude)
-	motifs = alt_hom_motifs + alt_di_motifs[0:1] + alt_tri_motifs[0:1] + alt_tetra_motifs[0:1]
+	motifs = alt_hom_motifs + alt_di_motifs[0:alt_motif_num] + \
+		alt_tri_motifs[0:alt_motif_num] + alt_tetra_motifs[0:alt_motif_num]
 	return motifs
 
 def GenerateRandomSequence(seqlen, gcperc=0.5, maxtries=100):
@@ -298,6 +323,10 @@ def CheckCutSites(oligo):
 			passed = False
 	return passed
 
+## Copied from https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script
+def get_git_revision_short_hash() -> str:
+    return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
+
 def main():
 	### Set up argument parsing ###
 	parser = argparse.ArgumentParser(__doc__)
@@ -332,7 +361,8 @@ def main():
 	sys.stderr.write("Using reference genome: " + args.reffa + "\n")
 	sys.stderr.write("Using repeats bed: " + args.rptsbed + "\n")
 	sys.stderr.write("Using output prefix: " + args.out + "\n")
-
+	sys.stderr.write("\nUsing parameters:\n")
+	sys.stderr.write(GetParamSummary())
 	# Set up reference genome. Extract with genome[chr][start:end]
 	genome = pyfaidx.Fasta(args.reffa)
 
@@ -340,6 +370,14 @@ def main():
 	# Set up output file
 	f_oligo = open(args.out + ".oligos.tab", "w")
 	f_split = open(args.out + ".oligos.split.tab", "w")
+	f_log = open(args.out + ".log", "w")
+	f_log.write("##################\n")
+	f_log.write("Command: " + " ".join(sys.argv)+"\n")
+	f_log.write("Github commit: " + get_git_revision_short_hash() +"\n")
+	f_log.write("Input bed file: %s (md5sum: %s)\n"%(args.rptsbed, \
+		hashlib.md5(open(args.rptsbed,'rb').read()).hexdigest()))
+	f_log.write(GetParamSummary())
+	f_log.write("##################\n")
 
 	# Process one STR locus at a time
 	with open(args.rptsbed, "r") as f:
@@ -380,10 +418,14 @@ def main():
 					if args.debug:
 						if args.debug: sys.stderr.write("   [%s] Generating oligos with allele len=%s and motif=%s\n"%(locname, alen, motif))
 					if "random" not in motif and "ref" not in motif and len(motif)*alen>MAX_STR_LEN:
-						if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif))
+						msg = "   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif)
+						if args.debug: sys.stderr.write(msg)
+						f_log.write(msg)
 						continue
 					if "ref" in motif and len(repeat_unit)*alen>MAX_STR_LEN:
-						if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif))
+						msg = "   [%s] Skipping len=%s and motif=%s. Too long!\n"%(locname, alen, motif)
+						if args.debug: sys.stderr.write(msg)
+						f_log.write(msg)
 						continue
 					# Step 1: generate the variable flanking + STR region 
 					variable_region, match_ref = GenerateVariableRegion(chrom, str_start, str_end, \
@@ -394,10 +436,12 @@ def main():
 					oligo_num = 0
 					for vreg in [variable_region, utils.ReverseComplement(variable_region)]:
 						if not CheckCutSites(FIVE_PRIME_ADAPT + vreg):
-							if args.debug: sys.stderr.write("   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif))
+							msg = "   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif)
+							if args.debug: sys.stderr.write(msg)
+							f_log.write(msg)
 							oligo_num += 1 # still ned to increment this
 							continue
-						oligo_name = "_".join(["%s:%s:%s"%(chrom, str(str_start), str(str_end)), str_id.replace("_","-"), repeat_unit, str(alen), motif, str(oligo_num)])
+						oligo_name = "_".join(["%s:%s-%s"%(chrom, str(str_start), str(str_end)), str_id.replace("_","-"), repeat_unit, str(alen), motif, str(oligo_num)])
 						if match_ref:
 							oligo_name += "*"
 						oligo_list = GenerateOligo(vreg, debug=args.debug)
@@ -405,7 +449,10 @@ def main():
 						f_split.write("\t".join([oligo_name] + oligo_list)+"\n")
 						oligo_num += 1
 						probecount += 1
-			sys.stderr.write("   [%s] Generated %s probes for %s. Context len=%s\n"%(locname, probecount, locname, max_context_size))
+			
+			msg = "   [%s] Generated %s probes for %s. Context len=%s\n"%(locname, probecount, locname, max_context_size)
+			if args.debug: sys.stderr.write(msg)
+			f_log.write(msg)
 	f_oligo.close()
 	f_split.close()
 
@@ -418,7 +465,9 @@ def main():
 		for line in f:
 			probe = line.strip().split()[1]
 			if probe in probes:
-				if args.debug: sys.stderr.write("Removing %s. Redundant probe.\n"%line.strip().split()[0])
+				msg = "Removing %s. Redundant probe.\n"%line.strip().split()[0]
+				if args.debug: sys.stderr.write(msg)
+				f_log.write(msg)
 				filtered += 1
 			else:
 				probes.add(probe)
@@ -430,17 +479,24 @@ def main():
 			for line in f:
 				oligo_id, probe = line.strip().split()
 				if probe in probes:
-					if args.debug: sys.stderr.write("Removing manually added probe %s. Redundant probe.\n"%line.strip().split()[0])
+					msg = "Removing manually added probe %s. Redundant probe.\n"%line.strip().split()[0]
+					if args.debug: sys.stderr.write(msg)
+					f_log.write(msg)
 					filtered += 1
 				else:
-					if args.debug: sys.stderr.write("Keeping manually added probe %s. Redundant probe.\n"%line.strip().split()[0])
+					msg = "Keeping manually added probe %s. Redundant probe.\n"%line.strip().split()[0]
+					if args.debug: sys.stderr.write(msg)
+					f_log.write(msg)
 					probes.add(probe)
 					f_filt.write(line.strip()+"\n")
 					kept += 1
 					manually_added += 1
-	sys.stderr.write("Kept %s probes (%s manually added). " 
-					"Filtered %s total redundant probes\n"%(kept, manually_added, filtered))
+	msg = "Kept %s probes (%s manually added). "%(kept, manually_added)
+	msg += "Filtered %s total redundant probes\n"%(filtered)
+	if args.debug: sys.stderr.write(msg)
+	f_log.write(msg)
 	f_filt.close()
+	f_log.close()
 	sys.exit(0)
 
 if __name__ == "__main__":
