@@ -44,10 +44,34 @@ def check_R1 (sequence, levenshtein_matching_length,
     
     # the sequence being checked 
     seq_check = sequence[20: 20 + levenshtein_matching_length]
-    
+   
+    # as below, I'd  prefer if branches that return or error out to come first
+    # so that the next statement can be unindented
+    # i.e. 
+    # if seq_check[:2] != ref_seq[:2]:
+    #    error
+    #
+    # ... continue ...
+
     # check for 2bp exact match after barcode
     if seq_check[:2] == ref_seq[:2]:
-        
+       
+        # you've already guaranteed that the first two bps exactly match
+        # so just need to run
+        # lev_score = Levenshtein.distance(ref_seq[2:], seq_check[2:])
+
+
+        # Levenshtein is probably quite slow compared to some other simpler comparison metrics.
+        # If you want to speed this up, is this metric necessary, or can you use a simpler comparison?
+        # Also, I don't know how cleanly Levenshtein is optimized for the best-case scenario
+        # and how often you actually encounter imperfect reads.
+        # If most of your reads are perfect, perhaps
+        # if seq_check == ref_seq:
+        #   continue
+        # else:
+        #   Levenshtein
+        # would be faster?
+
         # calculate levenshtein distancing
         lev_score = Levenshtein.distance(ref_seq, seq_check)
         # check for leveshtein distancing
@@ -103,6 +127,7 @@ def check_R2 (sequence, levenshtein_matching_length,
     # pass the check
     return True
 
+# I would call this filter_reads, it currently sounds like its just acting on one read
 def filter_read (path_R1, path_R2,
                  file_type, out_dir, 
                  R1_lev_matching_length,
@@ -110,7 +135,7 @@ def filter_read (path_R1, path_R2,
                  R2_lev_matching_length,
                  R2_lev_threshold):
     """
-    to filter reads and write the filter read 
+    to filter reads and write the filtered reads
     to a new read file of the same file type
     parameter:
         1. path_R#
@@ -143,6 +168,18 @@ def filter_read (path_R1, path_R2,
            "resulting in {remain} pairs of reads({percent}%).")
     
     # read file
+
+    # I don't think you should allow fasta input, so this won't be needed.
+    # But - if you were to keep this here, I prefer the structure
+    # if file_type not in  ["fastq.gz", "fastq", "fq"]:
+    #    raise ValueError("File type is not fastq.gz, fastq, or fq")
+    # 
+    # fname = "filtered" + "." + file_type
+    # ... continue
+    # 
+    # This way the continued part doesn't have to be indented, and a reader
+    # doesn't have to keep track of exactly what part of the code the if/else pertains to, as its done
+
     if file_type in ["fastq.gz", "fastq", "fq"]:
         
         fname = "filtered" + "." + file_type
@@ -164,26 +201,69 @@ def filter_read (path_R1, path_R2,
         lines = 0
         lines_R1 = []
         lines_R2 = []
+        # This for loop is clearly the bottleneck of this part of the code (though if this part of the code
+        # isn't slow then that doesn't matter).
+        # For loops in python are slow. Loops are much faster in C
+        # but I despise writing in C, and don't expect it to be worth your time
+        # Nothing jumps out to me here as being 'wrong'.
+        # You'll probably have to parallelize and run multiple processes doing this on
+        # different batches of reads simultaneously. The question is, will that be
+        # cost efficient enough?
+        # If you decide you want to optimize this, some potential ideas:
+        # Instead of opening files with open(), possibly use mmap? https://docs.python.org/3/library/mmap.html
+        # Some useful reading on mmap:
+        # https://stackoverflow.com/questions/9817233/why-mmap-is-faster-than-sequential-io
+        # https://stackoverflow.com/questions/12383900/does-mmap-really-copy-data-to-the-memory
+        # Another idea is you can use the FastqGeneralIterator from Biopython
+        # instead of reading line by line yourself (Arya suggested this)
+        # http://biopython.org/DIST/docs/tutorial/Tutorial.html#sec%3Alow-level-fasta-fastq
+        #
+        # Some notes:
+        # * I like using other people's code when its useful, but I'm not convinced that biopython
+        # will actually provide any speedup, and I don't think you need all the functionality it provides
+        # * You can use biopython ontop of mmap if both prove to be helpful
+        # * if you want to start reading a file in the middle, I think mmap is the way to go
+        # This is important if you want to run multiple copies of this code in parallel on different chunks
+        # of the file.
+        # * If you start reading a file in the middle, you won't necessarily start on a line break.
+        # So you'll need to start reading at the next read, not exactly where you picked.
+        # Similarly, if you end at a fixed location, you may need to grab the next few bytes to finish
+        # the last line(s) of the read.
+        # * Are the two files aligned character by charcter or only line by line? If only line by line, then starting in the middle
+        # based on byte position may not work, and you may need an indexing program of some sort.
+        # * Only optimize this if this is a bottleneck. Not worth the time otherwise
+        # * If you decide to try to optimize this, test which ends up being faster. Don't assume
+        # changes are improvements.
+        #                                        _        _
+        # Hopefully some of that's useful to you. \_(^^)_/
         for line_R1, line_R2 in zip(file_R1, file_R2):
             lines_R1.append(line_R1.rstrip())
             lines_R2.append(line_R2.rstrip())
             lines += 1
             
             if lines == 4:
-                
+               
+                # I don't mind helper functions,
+                # but this particular one (process) can be simplified away by
+                # just writing
+                # R1_id, R1_seq, R1_sign, R1_qual = lines_R1
+
                 # record the read
                 record_R1 = process(lines_R1)
                 record_R2 = process(lines_R2)
+                # instead of starting total_pair at -1 and needing this check,
+                # why not just start it at 0?
                 if total_pair == -1:
                     total_pair = 1
                 else:
                     total_pair += 1
 
                 # record R1
+                # I would check that R1_id == R2_id
                 R1_id = record_R1["read_id"]
                 R1_seq = record_R1["seq"]
-                R1_sign = record_R1["optional"]
-                R1_qual = record_R1["qual"]
+                R1_sign = record_R1["optional"] # you don't use this variable, so you don't need this statement
+                R1_qual = record_R1["qual"]# you don't use this variable, so you don't need this statement
                 
                 # record R2
                 R2_id = record_R2["read_id"]
@@ -290,6 +370,7 @@ def getargs():
                              required=True)
     inout_group.add_argument("--read2", help="Path to read2 file", type=str,
                              required=True)
+    # it seems like you don't support fasta as a filetype? If so, it shouldn't be listed here, that's just confusing
     inout_group.add_argument("--filetype", help="File type of reads", type=str, 
                              choices=["fasta.gz", "fastq.gz", "fasta", "fastq", "fa", "fq"],
                              required=True)
@@ -335,7 +416,8 @@ def main(args):
     
     # check file existence 
     if not os.path.exists(R1_path):
-        print("Error: %s does not exist"%R1_path)
+        # minor: if you're printing an error, I would add file=sys.stderr to the print command
+        print("Error: %s does not exist"%R1_path) 
         return 1
     
     if not os.path.exists(R2_path):
@@ -345,8 +427,10 @@ def main(args):
     if not os.path.exists(bwa_ref):
         print("Error: %s does not exist"%bwa_ref)
         return 1
-    
+   
+    # I don't think os.path.abspath is needed here
     if not os.path.exists(os.path.dirname(os.path.abspath(out_dir))):
+        # minor: I would be consistent, either use print or common.WARNING. Either use format or the % operator
         common.WARNING("Error: The output directory {outdir} does not exist"
                        .format(outdir=out_dir))
         return 1
@@ -366,6 +450,7 @@ def main(args):
     out_bam = out_dir + "filtered.bam"
     print("start aligning filtered reads to " + bwa_ref, 
           flush=True)
+    # you don't need the parentheses inside below
     bwamem_alignment(bwa_ref, (out_dir + "filtered." + file_type), out_bam)
     print("alignment done" + "\n", 
           flush=True)
