@@ -459,6 +459,8 @@ def main():
 	kept = 0
 	probes = set()
 	f_filt = open(args.out + ".oligos.filtered.tab", "w")
+	f_filt_seqonly = open(args.out + ".oligos.filtered.seqonly.txt", "w")
+	f_filt_seqonly.write("Sequence\n")
 	with open(args.out + ".oligos.tab", "r") as f:
 		for line in f:
 			probe = line.strip().split()[1]
@@ -470,6 +472,7 @@ def main():
 			else:
 				probes.add(probe)
 				f_filt.write(line.strip()+"\n")
+				f_filt_seqonly.write(line.strip().split()[1]+"\n")
 				kept += 1
 	manually_added = 0
 	if args.add_probes:
@@ -487,6 +490,7 @@ def main():
 					f_log.write(msg)
 					probes.add(probe)
 					f_filt.write(line.strip()+"\n")
+					f_filt_seqonly.write(line.strip().split()[1]+"\n")
 					kept += 1
 					manually_added += 1
 	msg = "Kept %s probes (%s manually added). "%(kept, manually_added)
@@ -494,6 +498,7 @@ def main():
 	if args.debug: sys.stderr.write(msg)
 	f_log.write(msg)
 	f_filt.close()
+	f_filt_seqonly.close()
 	f_log.close()
 	sys.exit(0)
 
