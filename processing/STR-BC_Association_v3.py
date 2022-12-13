@@ -66,13 +66,11 @@ def cigar_check (cigar_string, R2_length):
         start = parse_cigar[0]
         end = parse_cigar[-1]
         mid = parse_cigar[1:-1]
-        print(mid)
         
         if ((start[1]=="M" and start[0] >= start_M_thres) and
             (end[1]=="M" and end[0] >= end_M_thres)):
             
             for sub_cigar in mid:
-                print(sub_cigar)
                 if ((sub_cigar[1] in ["I", "D"] ) and
                     (sub_cigar[0] < indel_thres)):
                     check_result = cigar_string
