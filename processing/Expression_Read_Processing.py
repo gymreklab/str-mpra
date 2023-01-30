@@ -658,14 +658,14 @@ def main(args):
         if reading_cDNA:
             cDNA_path = seq_dir + line.rstrip()
             if not os.path.exists(cDNA_path):
-                common.WARNING("Error: %s does not exist"%cDNA_path)
+                print("Error: %s does not exist"%cDNA_path)
                 return 1
             else:
                 cDNA_names.append(line.rstrip())
         if reading_gDNA:
             gDNA_path = seq_dir + line.rstrip()
             if not os.path.exists(gDNA_path):
-                common.WARNING("Error: %s does not exist"%gDNA_path)
+                print("Error: %s does not exist"%gDNA_path)
                 return 1
             else:
                 gDNA_names.append(line.rstrip())
@@ -674,13 +674,13 @@ def main(args):
     # 1. cDNA list and gDNA list have matched length
     # 2. matches the input replicate number 
     if len(cDNA_names) != len(gDNA_names):
-        common.WARNING("Error: The amount of input cDNA files and gDNA files does not match")
+        print("Error: The amount of input cDNA files and gDNA files does not match")
 
         if len(cDNA_names) != rep_num:
-            common.WARNING("Error: The amount of input cDNA files does not match anticipated replicate number")
+            print("Error: The amount of input cDNA files does not match anticipated replicate number")
 
         if len(gDNA_names) != rep_num:
-            common.WARNING("Error: The amount of input gDNA files does not match anticipated replicate number")
+            print("Error: The amount of input gDNA files does not match anticipated replicate number")
 
         return 1
 
