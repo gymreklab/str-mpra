@@ -160,6 +160,8 @@ def load_bam (bam_path, expected_length):
         # obtain read info 
         read_id = str(read.qname)
         barcode = read_id[-20:]
+        # print(read, flush=True)
+        # print("\n", flush=True)
         STR = str(read.reference_name)
         cigar_string = str(read.cigarstring)
         sequence = str(read.query)
@@ -167,7 +169,7 @@ def load_bam (bam_path, expected_length):
 
         # keep read that is the expected read length 
         # and does find a matching STR 
-        if (length == expected_length) & ("_STR_" in STR):
+        if (length == expected_length) & ("STR" in STR):
 
             # keep read that pass the cigar check
             if cigar_check(cigar_string, expected_length) != "failed":
@@ -483,7 +485,7 @@ def main(args):
 
     # check file existence 
     if not os.path.exists(bam_path):
-        common.WARNING("Error: %s does not exist"%bam_path)
+        print("Error: %s does not exist"%bam_path)
         return 1
     
     # checking if out_dir exists, if not, create the out_dir
