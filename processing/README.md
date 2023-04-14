@@ -1,10 +1,26 @@
 # MPRA processing 
 - location (snolax): `/storage/MPRA/str-mpra/processing/`
 
+## Package needed 
+- `os`
+- `sys`
+- `copy`
+- `gzip`
+- `numpy`
+- `Cigar`
+- `pandas`
+- `seaborn`
+- `argparse`
+- `subprocess`
+- `matplotlib`
+- `Levenshtein`
+- `scipy.stats`
+- `matplotlib.pyplot`
+
 ## Association
 - __Association Read Pre-processing via `STR-BC_Pre-Processing.py`__
     - usage \
-      type `STR-BC_Pre-Processing.py --help` in terminal for detail, below is sample command for modification
+      type `STR-BC_Pre-Processing.py --help` in terminal for detail, below is a sample command for modification
     ```shell
     nohup sh -c -u "/storage/MPRA/str-mpra/processing/STR-BC_Pre-Processing.py \
       --read1 /storage/nextseq_demultiplex/NextSeqDate_Project/MPRA_read1.fastq.gz \
@@ -19,7 +35,7 @@
     ```
 - __Barcode-STR Association via `STR-BC_Association_v3.py`__
     - usage \
-      type `STR-BC_Association_v3.py --help` in terminal for detail, below is sample command for modification
+      type `STR-BC_Association_v3.py --help` in terminal for detail, below is a sample command for modification
     ```shell
     nohup sh -c -u "/storage/MPRA/str-mpra/processing/STR-BC_Association_v3.py \
       --bam /storage/MPRA/hSTR1/Date_Initial_Association/outputs/pre-process/filtered.bam \
@@ -32,7 +48,7 @@
     - For pre-processing, `--read1`, `--read2`, `--outdir` should always be modifed
     - For association, `--bam`, `--outdir` should always be modified 
         - the .bam file follow by the flag `--bam` is the output from preprocessing 
-    - __make sure to create the output directory beforehand__
+    - __for the output directory__
         - recommended naming for better organization: \
           __snorlax__
           - in `/storage/MPRA/hSTR1/` create a working directory with the format of `Date_Initial_Association` (e.g. `20220712_QG_Association`)
@@ -41,9 +57,10 @@
 ## Expression 
 - via `Expression_Read_Processing.py`
     - usage \
-      type `Expression_Read_Processing.py --help` in terminal for detail, below is sample command for modification
+      type `Expression_Read_Processing.py --help` in terminal for detail, below is a sample command for modification
     ```shell
     nohup sh -c -u "/storage/MPRA/str-mpra/processing/Expression_Read_Processing.py \
+      -- mode [choose from "ALL" or "QC"]
       --seqdir /storage/nextseq_demultiplex/NextSeqDate_Project/ \
       --names /storage/MPRA/hSTR1/Date_Initial_Expression/input_file.txt \
       --filetype fastq.gz \
@@ -61,9 +78,11 @@
       --min_barcode 3" > /storage/MPRA/hSTR1/Date_Initial_Expression/expression.out 2>&1 &
     ```
 - note 
-    - For expression read processing, `--seqdir`, `--names`, `--association`, `--outdir` should always be modifed
+    - For expression read processing, `--mode`, `--seqdir`, `--names`, `--association`, `--outdir` should always be modifed
         - the .tsv file follow by the flag `--association` is the output from STR-BC association 
-    - __make sure to create the output directory beforehand__
+    - __for `--mode`__
+        - use `--mode QC` if only wanted to perfrom QC on the reads  
+    - __for the output directory__
         - recommended naming for better organization: \
           __snorlax__
           - in `/storage/MPRA/hSTR1/` create a working directory with the format of `Date_Initial_Expression` (e.g. `20220908_SMB_Expression`)

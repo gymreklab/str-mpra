@@ -143,8 +143,10 @@ def filter_read (path_R1, path_R2,
            "resulting in {remain} pairs of reads({percent}%).")
     
     # read file
-    if file_type in ["fastq.gz", "fastq", "fq"]:
-        
+    if file_type not in ["fastq.gz", "fastq", "fq"]:
+        raise ValueError("File type is not fastq.gz, fastq, or fq")
+      
+    else:        
         fname = "filtered" + "." + file_type
         
         if ".gz" in file_type:
@@ -247,9 +249,7 @@ def filter_read (path_R1, path_R2,
               flush=True)
         print("finished writing filtered reads to " + out_dir + fname + "\n",
               flush=True)
-            
-    else:
-        raise ValueError("File type is not fastq.gz, fastq, or fq")
+        
 
 def bwamem_alignment (ref_path, read2_path, out_path):
 
@@ -291,7 +291,7 @@ def getargs():
     inout_group.add_argument("--read2", help="Path to read2 file", type=str,
                              required=True)
     inout_group.add_argument("--filetype", help="File type of reads", type=str, 
-                             choices=["fasta.gz", "fastq.gz", "fasta", "fastq", "fa", "fq"],
+                             choices=["fastq.gz", "fastq", "fq"],
                              required=True)
     inout_group.add_argument("--bwaref", help="Path to ref.fa", type=str,
                              required=True)
@@ -346,10 +346,9 @@ def main(args):
         print("Error: %s does not exist"%bwa_ref)
         return 1
     
-    if not os.path.exists(os.path.dirname(os.path.abspath(out_dir))):
-        common.WARNING("Error: The output directory {outdir} does not exist"
-                       .format(outdir=out_dir))
-        return 1
+    # checking if out_dir exists, if not, create the out_dir
+    if not os.path.exists(os.path.dirname(out_dir)):
+         os.mkdir(os.path.dirname(out_dir))
     
     # process read 
     print("start filtering reads...", 

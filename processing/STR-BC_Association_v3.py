@@ -61,7 +61,7 @@ def cigar_check (cigar_string, R2_length):
     
     if len(parse_cigar) > expected_length:
         # long cigar string, filtered 
-        check_result = "failed"
+        return "failed"
     else:
         start = parse_cigar[0]
         end = parse_cigar[-1]
@@ -78,13 +78,13 @@ def cigar_check (cigar_string, R2_length):
                     # cigar string either have modification 
                     # other than indel, or the indel is larger
                     # than the corresponding threshold
-                    check_result = "failed"
+                    return "failed"
                 
         else:
             # cigar string does not start and end with 
             # matching sequence that pass corresponding 
             # threshold, filtered
-            check_result = "failed"
+            return "failed"
     
     return check_result
 
@@ -160,6 +160,8 @@ def load_bam (bam_path, expected_length):
         # obtain read info 
         read_id = str(read.qname)
         barcode = read_id[-20:]
+        # print(read, flush=True)
+        # print("\n", flush=True)
         STR = str(read.reference_name)
         cigar_string = str(read.cigarstring)
         sequence = str(read.query)
@@ -167,7 +169,7 @@ def load_bam (bam_path, expected_length):
 
         # keep read that is the expected read length 
         # and does find a matching STR 
-        if (length == expected_length) & ("_STR_" in STR):
+        if (length == expected_length) & ("STR" in STR):
 
             # keep read that pass the cigar check
             if cigar_check(cigar_string, expected_length) != "failed":
@@ -486,10 +488,9 @@ def main(args):
         print("Error: %s does not exist"%bam_path)
         return 1
     
-    if not os.path.exists(os.path.dirname(os.path.abspath(out_dir))):
-        common.WARNING("Error: The output directory {outdir} does not exist"
-                       .format(outdir=out_dir))
-        return 1    
+    # checking if out_dir exists, if not, create the out_dir
+    if not os.path.exists(os.path.dirname(out_dir)):
+         os.mkdir(os.path.dirname(out_dir))    
     
     # optional suffix for plots
     STRBC_occurrence_plot_suffix = args.occurCount

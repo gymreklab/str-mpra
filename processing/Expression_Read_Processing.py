@@ -51,7 +51,7 @@ def check_read (sequence, read_len,
     exact_match = qc_seq[:levenshtein_matching_length]
     
     # the sequence being checked 
-    seq_check = sequence[20:]
+    seq_check = sequence[20:read_len]
     
     # check for required bp of exact match after barcode
     if seq_check[:levenshtein_matching_length] == exact_match:
@@ -331,30 +331,6 @@ def motif_sep (seq_motif):
 #             return "AT_only"
         return "CG or AT"
 
-def active_ratio (in_df):
-    out_dict = {}
-    total_active = in_df.active.value_counts()["active"]
-    total_inactive = in_df.active.value_counts()["inactive"]
-    
-    selected_motifs = list(in_df.motif.value_counts()[in_df.motif.value_counts()>100].index)
-    selected_df = in_df[in_df["motif"].isin(selected_motifs)]
-    
-    for motif, active_state in zip(in_df["motif"],
-                                   in_df["active"]):
-        if motif not in out_dict:
-            out_dict[motif] = {"active": 0, "inactive": 0}
-
-        out_dict[motif][active_state] += 1
-    
-    ratio_df = pd.DataFrame(out_dict).transpose().reset_index()
-    ratio_df["active"] = ratio_df["active"]/total_active
-    ratio_df["inactive"] = ratio_df["inactive"]/total_inactive
-    ratio_df = ratio_df.rename(columns={"index": "motif"})
-    ratio_df["motif_group"] = ratio_df["motif"].apply(motif_sep)
-    ratio_df["log2active%/inactive%"] = np.log2(ratio_df["active"]/ratio_df["inactive"])
-    
-    return ratio_df, selected_df   
-
 def type_to_int (type_str):
     if type_str == "ref":
         return int(0)
@@ -435,15 +411,137 @@ def ratio_pearson_correlation (in_df, rep_int, motif_dict, str_len_dict):
     
     return out_df
 
+def combine_statistics(betas, correlations, pvals, stderrs):
+    
+    num_ele = len(betas)
+    for stat in (correlations, pvals, stderrs):
+        if len(stat) != num_ele:
+            print(stat + "have different numbers of elements")
+    
+    ws = []
+    bws = []
+    cws = []
+    
+    for i in range(0, num_ele):
+        w = 1/(stderrs[i] ** 2)
+        
+        ws.append(w)
+        bws.append(betas[i] * w)
+        cws.append(correlations[i] * w)
+      
+    final_se = (1/sum(ws)) ** 0.5
+    final_beta = sum(bws)/sum(ws)
+    final_corr = sum(cws)/sum(ws)
+    
+    # use the above meta-analysis formula
+    z = final_beta/final_se
+    final_p = stats.norm.sf(abs(z))*2
+    
+#     # check
+#     if num_ele == 1:
+#         print("beta: " + str(final_beta) + "\n" +
+#               "correlation: " + str(final_corr) + "\n" + 
+#               "stderr: " + str(final_se) + "\n" +
+#               "meta_p: " + str(final_p) + "\n" + 
+#               "scipy_p: " + str(combined_p) + "\n")
+    
+    return final_beta, final_se, final_corr, final_p, num_ele
+
+def stat_data (expressions, rep_num):
+    statistics = {}
+    for i in range(0, rep_num):
+        expression = expressions[i]
+
+
+        for STR, beta, corr, pval, stderr, motif, ID, chrom, pos, end in zip(expression.STR, 
+                                                                             expression.beta, 
+                                                                             expression.pearson_r, 
+                                                                             expression.pearson_pval, 
+                                                                             expression.stderr, 
+                                                                             expression.motif,
+                                                                             expression.gene_id, 
+                                                                             expression.str_chr, 
+                                                                             expression.str_pos,
+                                                                             expression.str_end):
+
+            if STR not in statistics:
+                statistics[STR] = {
+                    "betas": [],
+                    "corrs": [],
+                    "pvals": [],
+                    "stderrs": [],
+                    "motif": "",
+                    "gene_id": "",
+                    "str_chr": "",
+                    "str_pos": "",
+                    "str_end": ""
+                }
+
+            statistics[STR]["betas"].append(beta)
+            statistics[STR]["corrs"].append(corr) 
+            statistics[STR]["pvals"].append(pval) 
+            statistics[STR]["stderrs"].append(stderr) 
+            statistics[STR]["motif"] = motif
+            statistics[STR]["gene_id"] = ID
+            statistics[STR]["str_chr"] = chrom
+            statistics[STR]["str_pos"] = pos
+            statistics[STR]["str_end"] = end
+
+    combined_statistics = {
+        "STR": [],
+        "beta": [],
+        "correlation": [],
+        "p-value": [],
+        "stderr": [],
+        "num_rep": [],
+        "motif": [],
+        "gene_id": [],
+        "chrom": [],
+        "str.start": [],
+        "str.end": []
+    }
+
+    for STR in statistics:
+        betas = statistics[STR]["betas"]
+        corrs = statistics[STR]["corrs"]
+        pvals = statistics[STR]["pvals"]
+        stderrs = statistics[STR]["stderrs"]
+
+        # combined the statistics
+        final_beta, final_se, final_corr, final_p, num_ele = combine_statistics(betas, corrs, pvals, stderrs)
+
+        combined_statistics["STR"].append(STR)
+        combined_statistics["beta"].append(final_beta)
+        combined_statistics["correlation"].append(final_corr)
+        combined_statistics["p-value"].append(final_p)
+        combined_statistics["stderr"].append(final_se)
+        combined_statistics["num_rep"].append(num_ele)
+
+        combined_statistics["motif"].append(statistics[STR]["motif"])
+        combined_statistics["gene_id"].append(statistics[STR]["gene_id"])
+        combined_statistics["chrom"].append(statistics[STR]["str_chr"])
+        combined_statistics["str.start"].append(statistics[STR]["str_pos"])
+        combined_statistics["str.end"].append(statistics[STR]["str_end"])
+
+    stat_df = pd.DataFrame(combined_statistics)
+
+    return stat_df
+
 def getargs():
     parser = argparse.ArgumentParser()
     
+    # processing mode 
+    mode_group = parser.add_argument_group("Mode")
+    mode_group.add_argument("--mode", help="Processing mode",
+                            choices=["ALL", "QC"],
+                            type=str, required=True)
+    
     # input file & output directory 
     inout_group = parser.add_argument_group("Input/Output")
-    inout_group.add_argument("--seqdir", help="Directory of all the expression read sequencing result", type=str,
-                             required=True)
-    inout_group.add_argument("--names", help="A separate .txt file that contains all the sample names", type=str,
-                             required=True)
+    inout_group.add_argument("--seqdir", help="Directory of all the expression read sequencing result", 
+                             type=str, required=True)
+    inout_group.add_argument("--names", help="A separate .txt file that contains all the sample names", 
+                             type=str, required=True)
     inout_group.add_argument("--filetype", help="File type of reads", type=str, 
                              choices=["fastq.gz", "fastq", "fq"],
                              required=True)
@@ -451,14 +549,14 @@ def getargs():
                              required=True)
     inout_group.add_argument("--association", help="Path to association.tsv file", type=str,
                              required=True)
-    inout_group.add_argument("--DESeq2", help="Path to MPRA_DESeq2.r file", type=str,
-                             required=True)
-    inout_group.add_argument("--refSTR", help="Path to Mikhail's array_probes_split.tsv file", type=str,
-                             required=True)
-    inout_group.add_argument("--tss_str", help="Path to Mikhail's tss_str_pairs.tsv file", type=str,
-                             required=True)
-    inout_group.add_argument("--ens_gene", help="Path to gene annotation ens_genes.tab file", type=str,
-                             required=True)
+    inout_group.add_argument("--DESeq2", help="Path to MPRA_DESeq2.r file, required if mode=ALL",
+                             type=str, required=False)
+    inout_group.add_argument("--refSTR", help="Path to Mikhail's array_probes_split.tsv file, required if mode=ALL",
+                             type=str, required=False)
+    inout_group.add_argument("--tss_str", help="Path to Mikhail's tss_str_pairs.tsv file, required if mode=ALL",
+                             type=str, required=False)
+    inout_group.add_argument("--ens_gene", help="Path to gene annotation ens_genes.tab file, required if mode=ALL",
+                             type=str, required=False)
     inout_group.add_argument("--outdir", help="Path to output directory", type=str,
                              required=True)
     
@@ -487,16 +585,15 @@ def getargs():
 
 def main(args):
     # parameters 
+    # processing mode 
+    mode = args.mode
+    
     # input/output
     seq_dir = args.seqdir
     input_files = args.names
     file_type = args.filetype
     rep_num = args.numreplicate
     association_path = args.association
-    DESeq2_script_path = args.DESeq2
-    ref_info_path = args.refSTR
-    tss_str_path = args.tss_str
-    ens_gene_path = args.ens_gene
     out_dir = args.outdir
 
     # filtering related parameters 
@@ -511,13 +608,36 @@ def main(args):
     
     # checking input file existence
     if not os.path.exists(input_files):
-        print("Error: %s does not exist"%input_files)
+        common.WARNING("Error: %s does not exist"%input_files)
+        return 1    
+
+    # checking if association.tsv exists
+    if not os.path.exists(association_path):
+        common.WARNING("Error: %s does not exist"%association_path)
         return 1
-    # checking if out_dir exists
-    if not os.path.exists(os.path.dirname(os.path.abspath(out_dir))):
-        common.WARNING("Error: The output directory {outdir} does not exist"
-                       .format(outdir=out_dir))
-        return 1
+    
+    # checking if out_dir exists, if not, create the out_dir
+    if not os.path.exists(os.path.dirname(out_dir)):
+         os.mkdir(os.path.dirname(out_dir))
+    
+    # if processing mode is ALL
+    if mode == "ALL":
+        DESeq2_script_path = args.DESeq2
+        ref_info_path = args.refSTR
+        tss_str_path = args.tss_str
+        ens_gene_path = args.ens_gene
+        other_paths = [
+            DESeq2_script_path,
+            ref_info_path, 
+            tss_str_path, 
+            ens_gene_path
+        ]
+        
+        # checking if the above files exists
+        for other_file in other_paths:
+            if not os.path.exists(other_file):
+                common.WARNING("Error: %s does not exist"%other_file)
+                return 1
 
     # parsing the input file 
     cDNA_names = []
@@ -648,132 +768,137 @@ def main(args):
         groups.append(BC_STR_association (filt, out_dir, 
                                           association_dict, min_barcode,
                                           group_num))
+    # only continue the following process if mode=ALL
+    
+    if mode=="ALL":
+        # barcode adds up - generate matrix used for active STR identification 
+        agg_groups = []
+        for i in range(0, rep_num):
+            gDNA = "gDNA" + str(i+1)
+            cDNA = "cDNA" + str(i+1)
+            agg_group = groups[i].groupby(["STR"]).agg({gDNA:"sum", cDNA:"sum"})
+            agg_group = agg_group.reset_index()
+            agg_groups.append(agg_group)
 
-    # barcode adds up - generate matrix used for active STR identification 
-    agg_groups = []
-    for i in range(0, rep_num):
-        gDNA = "gDNA" + str(i+1)
-        cDNA = "cDNA" + str(i+1)
-        agg_group = groups[i].groupby(["STR"]).agg({gDNA:"sum", cDNA:"sum"})
-        agg_group = agg_group.reset_index()
-        agg_groups.append(agg_group)
+        for i in range(0, rep_num):
+            if i == 0:
+                agg_all = pd.merge(left=agg_groups[0], right=agg_groups[1],
+                                    how="outer",
+                                    left_on="STR", right_on="STR")
+            elif i == 1:
+                continue
+            elif i == rep_num:
+                break
+            else:
+                agg_all = pd.merge(left=agg_all, right=agg_groups[i],
+                                    how="outer",
+                                    left_on="STR", right_on="STR")
 
-    for i in range(0, rep_num):
-        if i == 0:
-            agg_all = pd.merge(left=agg_groups[0], right=agg_groups[1],
-                                how="outer",
-                                left_on="STR", right_on="STR")
-        elif i == 1:
-            continue
-        elif i == rep_num:
-            break
-        else:
-            agg_all = pd.merge(left=agg_all, right=agg_groups[i],
-                                how="outer",
-                                left_on="STR", right_on="STR")
+        agg_all = agg_all.fillna(0)
+        print("start generating the aggregated count matrix...")
+        agg_all.to_csv(out_dir + "aggregate_count_matrix.csv", index=False)
+        print("done\n", flush=True)
 
-    agg_all = agg_all.fillna(0)
-    print("start generating the aggregated count matrix...")
-    agg_all.to_csv(out_dir + "aggregate_count_matrix.csv", index=False)
-    print("done\n", flush=True)
-    
-    print("A total of " + str(len(agg_all)) + " STR is captured " +
-          "when combining the " + str(rep_num) + " replicates. \n",
-          flush=True) 
-    
-    # DESeq2
-    print("start performing DESeq2...", flush=True)
-    DESeq2_args = [out_dir + "aggregate_count_matrix.csv",
-                   out_dir, 
-                   str(rep_num)]
-    cmd = [DESeq2_script_path] + DESeq2_args
-    subprocess.call(cmd)
-    print("done\n", flush=True)
-    
-    # active STR identification
-    deseq2_path = out_dir + "deseq2_result.csv"
-    normalized_count = out_dir + "normalized_aggregate_count_matrix.csv"
+        print("A total of " + str(len(agg_all)) + " STR is captured " +
+              "when combining the " + str(rep_num) + " replicates. \n",
+              flush=True) 
 
-    deseq2 = pd.read_csv(deseq2_path)
-    deseq2 = deseq2.rename(columns={"Unnamed: 0": "STR"})
-    norm_mc = pd.read_csv(normalized_count)
-    norm_mc = norm_mc.rename(columns={"Unnamed: 0": "STR"})
-    
-    sig_STR_df = deseq2[deseq2["pvalue"] <= 0.01/STR_type(norm_mc)]
-    sig_full_STRs = list(sig_STR_df.STR)
+        # DESeq2
+        print("start performing DESeq2...", flush=True)
+        DESeq2_args = [out_dir + "aggregate_count_matrix.csv",
+                       out_dir, 
+                       str(rep_num)]
+        cmd = [DESeq2_script_path] + DESeq2_args
+        subprocess.call(cmd)
+        print("done\n", flush=True)
 
-    sig_STR_df = STR_split(sig_STR_df)
-    sig_STRs = list(sig_STR_df.STR)
-    
-    # generate active STR characterization realated .csv file
-    ref_STRs = pd.read_csv(ref_info_path, sep="\t")
-    human_STR = ref_STRs[ref_STRs["organism"]=="hg38"]
-    human_STR["STR"] = human_STR["id"] + "_" + human_STR["allele"]
-    human_STR = human_STR[["id", "allele", "STR", "motif", "str_seq"]]
-    human_STR.columns = ["STR", "type", "full_STR", "motif", "str_seq"]
-    human_STR["str_len"] = human_STR.str_seq.str.len()
-    human_STR["str_len"] = human_STR["str_len"].fillna(0)
-    
-    STR_motif = dict(zip(human_STR.full_STR, human_STR.motif))
-    STR_len = dict(zip(human_STR.full_STR, human_STR.str_len.astype(int)))
+        # active STR identification
+        deseq2_path = out_dir + "deseq2_result.csv"
+        normalized_count = out_dir + "normalized_aggregate_count_matrix.csv"
 
-    characterization = copy.deepcopy(norm_mc)
-    characterization["active"] = characterization["STR"].apply(is_active, args=([sig_full_STRs]))
-    characterization["motif"] = characterization.STR.map(STR_motif)
-    characterization["motif_group"] = characterization["motif"].apply(motif_sep)
-    characterization["str_len"] = characterization.STR.map(STR_len)
-    characterization["str_len"] = characterization["str_len"].fillna(0)
-    characterization["str_len"] = characterization["str_len"].astype(int)
-    
-    #motif_ratio, selected_characterization = active_ratio(characterization)
-    print("start generating active STR characterization realated .csv file...",
-          flush=True)
-    characterization.to_csv(out_dir + "characterization" + ".csv",
-                            index=False) 
-    
-    #the following two can be done in separate analysis notebook, hence removed 
-    #motif_ratio.to_csv(out_dir + "motif_ratio" + ".csv",
-    #                   index=False) 
-    #selected_characterization.to_csv(out_dir + "selected_characterization" + ".csv",
-    #                                 index=False)
-    print("done\n", flush=True)
-    
-    # obtain TSS and other gene info
-    tss_str_info = pd.read_csv(tss_str_path, sep="\t")
-    ens_gene_dict = {}
-    ens_gene_file = open(ens_gene_path, "r")
-    for line in ens_gene_file:
-        if line.rstrip():
-            line_list = list(line.strip().split("\t"))
-            gene_id = line_list[0]
-            gene_name = line_list[1]
-            ens_gene_dict[gene_id] = gene_name
-        else:
-            ens_gene_file.close()
-    
-    # pearson correlation calculation and matrix generation
-    print("start calculating perason correlation of expression and STR type...",
-          flush=True)
-    for i in range(0, rep_num):
-        bc_group = pd.read_csv(out_dir + "rep" + str(i+1) + "_count_matrix.csv")
-        bc_group = STR_split(bc_group)
+        deseq2 = pd.read_csv(deseq2_path)
+        deseq2 = deseq2.rename(columns={"Unnamed: 0": "STR"})
+        norm_mc = pd.read_csv(normalized_count)
+        norm_mc = norm_mc.rename(columns={"Unnamed: 0": "STR"})
 
-        # select significant STRs
-        bc_group = bc_group[bc_group.STR.isin(sig_STRs)]
+        sig_STR_df = deseq2[deseq2["pvalue"] <= 0.01/STR_type(norm_mc)]
+        sig_full_STRs = list(sig_STR_df.STR)
 
-        # pearson correlation calculation
-        expression = ratio_pearson_correlation(bc_group, i+1, STR_motif, STR_len)
-        expression = expression.merge(tss_str_info,
-                                      left_on="STR", right_on="str_id", how = "left")
-        expression = expression[expression.columns.drop(['str_id', 'organism'])]
-        expression.insert(1, "gene", 
-                          expression["gene_id"].map(ens_gene_dict))
-        # output matrix
-        print("start generating final correlation matrix " + str(i+1) + "...",
+        sig_STR_df = STR_split(sig_STR_df)
+        sig_STRs = list(sig_STR_df.STR)
+
+        # generate active STR characterization realated .csv file
+        ref_STRs = pd.read_csv(ref_info_path, sep="\t")
+        human_STR = ref_STRs[ref_STRs["organism"]=="hg38"]
+        human_STR["STR"] = human_STR["id"] + "_" + human_STR["allele"]
+        human_STR = human_STR[["id", "allele", "STR", "motif", "str_seq"]]
+        human_STR.columns = ["STR", "type", "full_STR", "motif", "str_seq"]
+        human_STR["str_len"] = human_STR.str_seq.str.len()
+        human_STR["str_len"] = human_STR["str_len"].fillna(0)
+
+        STR_motif = dict(zip(human_STR.full_STR, human_STR.motif))
+        STR_len = dict(zip(human_STR.full_STR, human_STR.str_len.astype(int)))
+
+        characterization = copy.deepcopy(norm_mc)
+        characterization["active"] = characterization["STR"].apply(is_active, args=([sig_full_STRs]))
+        characterization["motif"] = characterization.STR.map(STR_motif)
+        characterization["motif_group"] = characterization["motif"].apply(motif_sep)
+        characterization["str_len"] = characterization.STR.map(STR_len)
+        characterization["str_len"] = characterization["str_len"].fillna(0)
+        characterization["str_len"] = characterization["str_len"].astype(int)
+
+        print("start generating characterization.csv file based on reporter activity...",
               flush=True)
-        expression.to_csv(out_dir + "rep" + str(i+1) + "_pearson_correlation_matrix.csv")
-    print("done\n", flush=True)
-    
+        characterization.to_csv(out_dir + "characterization" + ".csv",
+                                index=False) 
+        print("done\n", flush=True)
+
+        # obtain TSS and other gene info
+        tss_str_info = pd.read_csv(tss_str_path, sep="\t")
+        ens_gene_dict = {}
+        ens_gene_file = open(ens_gene_path, "r")
+        for line in ens_gene_file:
+            if line.rstrip():
+                line_list = list(line.strip().split("\t"))
+                gene_id = line_list[0]
+                gene_name = line_list[1]
+                ens_gene_dict[gene_id] = gene_name
+            else:
+                ens_gene_file.close()
+
+        # pearson correlation calculation and matrix generation
+        print("start calculating perason correlation of expression and STR type...",
+              flush=True)
+        expressions = []
+        for i in range(0, rep_num):
+            bc_group = pd.read_csv(out_dir + "rep" + str(i+1) + "_count_matrix.csv")
+            bc_group = STR_split(bc_group)
+
+            # select significant STRs
+            bc_group = bc_group[bc_group.STR.isin(sig_STRs)]
+
+            # pearson correlation calculation
+            expression = ratio_pearson_correlation(bc_group, i+1, STR_motif, STR_len)
+            expression = expression.merge(tss_str_info,
+                                          left_on="STR", right_on="str_id", how = "left")
+            expression = expression[expression.columns.drop(['str_id', 'organism'])]
+            expression.insert(1, "gene", 
+                              expression["gene_id"].map(ens_gene_dict))
+            expressions.append(expression)
+            
+            # output matrix
+            print("start generating final correlation matrix " + str(i+1) + "...",
+                  flush=True)
+            expression.to_csv(out_dir + "rep" + str(i+1) + "_pearson_correlation_matrix.csv")
+        print("done\n", flush=True)
+        
+        # combined the replicates
+        print("start combining the matricies ...",
+              flush=True)
+        effect_df = stat_data(expressions, rep_num)
+        effect_df.to_csv(out_dir + "combined_results.csv", index="False")
+        print("done\n", flush=True)
+        
     return 0
 
 def run():
