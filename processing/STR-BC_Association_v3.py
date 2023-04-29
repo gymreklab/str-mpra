@@ -123,7 +123,7 @@ def filt_occurrence (BC_STR_dict, thres):
     
     remove_barcode(BC_STR_dict)
     
-def load_bam (bam_path, expected_length):
+def load_bam (bam_path, expected_length, sum_file):
     # output msg
     read_filt_txt = ("Out of {total} reads, {filt} reads that are either " +
                      "less than {expect_len}, and/or does not have " +
@@ -205,12 +205,19 @@ def load_bam (bam_path, expected_length):
                 num_filt += 1
 
     bam_file.close()
+    percent_remain = "{:.2f}".format((remained/total_read)*100)
     print(read_filt_txt.format(total=total_read, filt=num_filt,
                                expect_len=expected_length, 
                                remain=remained,
-                               percent=("{:.2f}".format((remained/total_read)*100)),
+                               percent=percent_remain,
                                perfect=num_perfect),
           flush=True)
+    
+    # write in summary 
+    sum_file.write("aligned and pass association qc," + str(remained) + "\n")
+    sum_file.write("% of total," + str(percent_remain) + "\n")
+    sum_file.write("perfect cigar," + str(num_perfect) + "\n")
+        
     
 #     print("start creating the unfiltered " +
 #           "BC-STR pair count matrix...", flush=True)
@@ -233,7 +240,21 @@ def load_bam (bam_path, expected_length):
     
     return BC_STRs
 
-def filter_BC_STR (BC_STR_dict, occurrence_thres):
+def output_count_and_association (BC_STR_dict, path):
+    
+    file = open(path, "w")
+    
+    for barcode in BC_STR_dict:
+        for STR in BC_STR_dict[barcode]:
+            occurrence = BC_STR_dict[barcode][STR]
+            out = "{barcode}\t{STR}\t{occur}\n"
+            file.write(out.format(barcode=barcode,
+                                  STR=STR,
+                                  occur=occurrence))   
+
+    file.close()
+
+def filter_BC_STR (BC_STR_dict, out_dir, occurrence_thres, sum_file):
     BC_STRs = copy.deepcopy(BC_STR_dict)
     
     #output msg    
@@ -253,6 +274,8 @@ def filter_BC_STR (BC_STR_dict, occurrence_thres):
     print(init_BC_STR_txt.format(init_barcode=num_init_barcode,
                                  init_STR=num_init_STR),
           flush=True)
+    sum_file.write("initial BC," + str(num_init_barcode) + "\n")
+    sum_file.write("initial STR," + str(num_init_STR) + "\n")
     
     # remove barcode associate with multiple STRs
     print("start removing barcodes associate with multiple STRs...",
@@ -265,6 +288,14 @@ def filter_BC_STR (BC_STR_dict, occurrence_thres):
     print(remove_dup_txt.format(removed=removed_barcode, 
                                 cur_barcode=num_cur_barcode,
                                 cur_STR=num_cur_STR))
+    sum_file.write("non-duplicate BC," + str(num_cur_barcode) + "\n")
+    sum_file.write("non-duplicate STR," + str(num_cur_STR) + "\n")    
+    
+    # output raw_association.tsv 
+    print("start generating raw_association.tsv...",
+          flush=True)
+    path = out_dir + "raw_association.tsv"
+    output_count_and_association(out_dict, path)
 
     # filter on BC-STR pair occurrence
     print("start filtering on BC-STR pair occurrence...",
@@ -278,6 +309,10 @@ def filter_BC_STR (BC_STR_dict, occurrence_thres):
                                threshold=occurrence_thres,
                                fin_barcode=num_fin_barcode,
                                fin_STR=num_fin_STR))
+    sum_file.write("pass occurence filter(" + str(occurrence_thres) + ") BC,"
+                   + str(num_fin_barcode) + "\n")
+    sum_file.write("pass occurence filter(" + str(occurrence_thres) + ") STR,"
+                   + str(num_fin_STR) + "\n")
     
     return out_dict
 
@@ -336,7 +371,7 @@ def STR_count (BC_STR_dict, out_dir=False):
                 
     return STR_count
 
-def filt_num_barcode (BC_STR_dict, STR_count_dict, barcode_thres):
+def filt_num_barcode (BC_STR_dict, STR_count_dict, barcode_thres, sum_file):
     BC_STRs = copy.deepcopy(BC_STR_dict)
     
     """
@@ -372,6 +407,10 @@ def filt_num_barcode (BC_STR_dict, STR_count_dict, barcode_thres):
                              threshold=barcode_thres,
                              fin_barcode=num_fin_barcode,
                              fin_STR=num_fin_STR))
+    sum_file.write("final BC(min " + str(barcode_thres)
+                   + " BC per STR)," + str(num_fin_barcode) + "\n")
+    sum_file.write("final STR(min " + str(barcode_thres)
+                   + " BC per STR)," + str(num_fin_STR) + "\n")
     
     return out_dict
 
@@ -420,26 +459,6 @@ def countplot_multiBC (STR_count_dict, out_dir, fig_suffix=None):
                      minSTR = STR_minBC,
                      minSTR_count = STR_minBC_count), 
           flush=True)
-        
-def output_count_and_association (BC_STR_dict, out_dir):
-    
-    print("start writing to association.tsv in the format of:\n " +
-          "barcode\t STR\t occurrence",
-          flush=True)
-    
-    path = out_dir + "association.tsv"
-    file = open(path, "w")
-    
-    for barcode in BC_STR_dict:
-        for STR in BC_STR_dict[barcode]:
-            occurrence = BC_STR_dict[barcode][STR]
-            out = "{barcode}\t{STR}\t{occur}\n"
-            file.write(out.format(barcode=barcode,
-                                  STR=STR,
-                                  occur=occurrence))   
-
-    file.close()
-    print("finished writing association.tsv \n")
 
 def getargs():
     parser = argparse.ArgumentParser()
@@ -492,21 +511,36 @@ def main(args):
     if not os.path.exists(os.path.dirname(out_dir)):
          os.mkdir(os.path.dirname(out_dir))    
     
+    # check if summary.csv exists, if not, create a new summary file 
+    if not os.path.exists(out_dir + "summary.csv"):
+        sum_file = open(out_dir + "summary.csv", "w")
+    else:
+        sum_file = open(out_dir + "summary.csv", "a")
+    
     # optional suffix for plots
     STRBC_occurrence_plot_suffix = args.occurCount
     multiBC_plot_suffix = args.multiBC
     
     # load data 
-    BC_STR = load_bam(bam_path, expected_length)
+    BC_STR = load_bam(bam_path, expected_length, sum_file)
 
     # filtering
-    filt_occurrence = filter_BC_STR(BC_STR, occurrence_thres)
+    filt_occurrence = filter_BC_STR(BC_STR, out_dir, occurrence_thres, sum_file)
     init_STR = STR_count(filt_occurrence)
-    fin_BC_STR = filt_num_barcode(filt_occurrence, init_STR, barcode_thres)
+    fin_BC_STR = filt_num_barcode(filt_occurrence, init_STR, barcode_thres, sum_file)
+    fin_STR = STR_count(fin_BC_STR, out_dir)
     
     # output
-    fin_STR = STR_count(fin_BC_STR, out_dir)
-    output_count_and_association (fin_BC_STR, out_dir)
+    print("start writing to association.tsv in the format of:\n " +
+          "barcode\t STR\t occurrence",
+          flush=True)
+    
+    path = out_dir + "association.tsv"
+    output_count_and_association (fin_BC_STR, path)
+    
+    sum_file.close()
+    print("finished writing association.tsv \n")
+    
     
     # plot occurrence distribution 
     print("start plotting occurrence distribution...",

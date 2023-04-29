@@ -108,7 +108,8 @@ def filter_read (path_R1, path_R2,
                  R1_lev_matching_length,
                  R1_lev_threshold, 
                  R2_lev_matching_length,
-                 R2_lev_threshold):
+                 R2_lev_threshold,
+                 sum_file):
     """
     to filter reads and write the filter read 
     to a new read file of the same file type
@@ -127,6 +128,8 @@ def filter_read (path_R1, path_R2,
         6. R#_levenshetein_threshold
             - maximum levenshetein distance the read 
               could have  
+        7. sum_file 
+            - summary statistic file 
     """
     
     # keep tracks of filtering 
@@ -232,12 +235,8 @@ def filter_read (path_R1, path_R2,
                 lines_R1 = []
                 lines_R2 = []
         
-        # close the files
-        file_R1.close()
-        file_R2.close()
-        file_out.close()
-        
         # print output message
+        percent_remain = "{:.2f}".format((remained_pair/total_pair)*100)
         print(txt.format(filt = filtered_pair,
                          total = total_pair, 
                          R1_lev_len = R1_lev_matching_length,
@@ -245,10 +244,21 @@ def filter_read (path_R1, path_R2,
                          R2_lev_len = R2_lev_matching_length,
                          R2_lev_thres = R2_lev_threshold,
                          remain = remained_pair,
-                         percent = ("{:.2f}".format((remained_pair/total_pair)*100))),
+                         percent = percent_remain),
               flush=True)
         print("finished writing filtered reads to " + out_dir + fname + "\n",
               flush=True)
+        
+        # write in summary 
+        sum_file.write("total," + str(total_pair) + "\n")
+        sum_file.write("remain," + str(remained_pair) + "\n")
+        sum_file.write("% of total," + str(percent_remain) + "\n")
+        
+        # close the files
+        file_R1.close()
+        file_R2.close()
+        file_out.close()
+        sum_file.close()
         
 
 def bwamem_alignment (ref_path, read2_path, out_path):
@@ -349,6 +359,9 @@ def main(args):
     # checking if out_dir exists, if not, create the out_dir
     if not os.path.exists(os.path.dirname(out_dir)):
          os.mkdir(os.path.dirname(out_dir))
+            
+    # create summary.csv file 
+    sum_file = open(out_dir + "summary.csv", "w")
     
     # process read 
     print("start filtering reads...", 
@@ -358,7 +371,8 @@ def main(args):
                  R1_lev_matching_length,
                  R1_lev_threshold, 
                  R2_lev_matching_length,
-                 R2_lev_threshold)
+                 R2_lev_threshold,
+                 sum_file)
     print("filtering done" + "\n", flush=True)
 
     # alignment on read 2
