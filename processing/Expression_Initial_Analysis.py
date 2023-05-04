@@ -86,7 +86,7 @@ def uber_get_motif (repeat_type):
     else: 
         return repeat_info[2]
 
-def ratio_pearson_correlation (in_df, rep_int, mode, motif_dict=None):    
+def ratio_pearson_correlation (in_df, rep_int, mode, motif_dict=None, frequency_dict=None):    
     df = copy.deepcopy(in_df)
     
     col_cDNA = "cDNA" + str(rep_int)
@@ -103,18 +103,24 @@ def ratio_pearson_correlation (in_df, rep_int, mode, motif_dict=None):
                                                              df.STR, 
                                                              df.bc_count,
                                                              df.type):
-        if mode == "hSTR":
+        if mode == "STR":
             motif = motif_dict[STR + "_" + type_STR]
             original_motif = motif
+            frequency = get_repeat_frequency(type_STR)
         if mode == "Uber":
             motif = uber_get_motif (type_STR)
-            original_motif = type_STR.split("_")[0]        
+            original_motif = type_STR.split("_")[0]
+            
+            if frequency_dict:
+                if (STR + "_" + type_STR) in frequency_dict:
+                    frequency = frequency_dict[STR + "_" + type_STR]
+                else:
+                    frequency = get_repeat_frequency(type_STR)
         
         original_motif_dict[STR] = original_motif
         
         col_ratio = "ratio" + str(rep_int)
         ratio = cDNA/gDNA
-        frequency = get_repeat_frequency(type_STR)
         
         if barcode not in ratio_dict:
             ratio_dict[barcode] = {
@@ -171,7 +177,7 @@ def ratio_pearson_correlation (in_df, rep_int, mode, motif_dict=None):
     ratio_df = ratio_df.reset_index()
     ratio_df = ratio_df.rename(columns={'index':'barcode'})
     if mode == "hSTR":
-        ratio_df = ratio_df.drop(columns=['original motif'])
+        ratio_df = ratio_df[ratio_df.columns.drop(['original_motif'])]
     
     correlation_df = pd.DataFrame(correlation_dict).transpose()
     correlation_df = correlation_df.reset_index()
@@ -184,7 +190,6 @@ def ratio_pearson_correlation (in_df, rep_int, mode, motif_dict=None):
                               correlation_df["STR"].map(original_motif_dict))
     
     return ratio_df, correlation_df 
-
 def combine_statistics(betas, correlations, pvals, stderrs):
     
     num_ele = len(betas)
@@ -346,6 +351,8 @@ def getargs():
                              type=str, required=False)
     inout_group.add_argument("--refSTR", help="Path to Mikhail's array_probes_split.tsv file, required if mode=hSTR",
                              type=str, required=False)
+    inout_group.add_argument("--refFrequency", help="Path to actual repeat frequency for probe selected from hSTR library, required if mode=Uber",
+                             type=str, required=False)
     inout_group.add_argument("--outdir", help="Path to output directory", type=str,
                              required=True)
     
@@ -357,7 +364,7 @@ def getargs():
 def main(args):
     # parameters 
     # processing mode 
-    mode = args. mode 
+    mode = args.mode 
     
     # input/output 
     data_dir = args.datadir
@@ -432,9 +439,20 @@ def main(args):
         print("start generating characterization.csv file based on reporter activity...",
               flush=True)
         characterization.to_csv(out_dir + "characterization" + ".csv",
-                                index=False) 
+                                index=None) 
         print("done\n", flush=True)        
-
+    
+    if mode == "Uber":
+        ref_frequency_path = args.refFrequency
+        
+        if not os.path.exists(ref_frequency_path):
+            print("Error: %s does not exist"%ref_frequency_path)
+            return 1
+        
+        #probe frequency reference 
+        freq_ref = pd.read_csv(ref_frequency_path)
+        freq_dict = dict((zip(freq_ref.STR, freq_ref.repeat_freq)))
+    
     # pearson correlation calculation and matrix generation 
     print("start calculating perason correlation of expression and STR type...",
           flush=True)
@@ -459,17 +477,17 @@ def main(args):
             bc_group["strand"] = bc_group["type"].apply(uber_get_strand)
 
             ratio_ori, correlation_ori = ratio_pearson_correlation(bc_group[bc_group["strand"] == -1],
-                                                                   i+1, mode)
+                                                                   i+1, mode, frequency_dict=freq_dict)
             ratio_ori["strand"] = -1
             correlation_ori["strand"] = -1
 
             ratio_0, correlation_0 = ratio_pearson_correlation(bc_group[bc_group["strand"] == 0],
-                                                               i+1, mode)
+                                                               i+1, mode, frequency_dict=freq_dict)
             ratio_0["strand"] = 0
             correlation_0["strand"] = 0
 
             ratio_1, correlation_1 = ratio_pearson_correlation(bc_group[bc_group["strand"] == 1],
-                                                               i+1, mode)
+                                                               i+1, mode, frequency_dict=freq_dict)
             ratio_1["strand"] = 1
             correlation_1["strand"] = 1
 
@@ -482,16 +500,16 @@ def main(args):
         # output matrix
         print("start generating final ratio matrix and correlation matrix " + str(i+1) + "...",
               flush=True)
-        ratio_df.to_csv(out_dir + "rep" + str(i+1) + "_ratio_matrix.csv", index="False")
+        ratio_df.to_csv(out_dir + "rep" + str(i+1) + "_ratio_matrix.csv", index=None)
         correlation_df.to_csv(out_dir + "rep" + str(i+1) + "_pearson_correlation_matrix.csv",
-                              index="False")
+                              index=None)
         print("done\n", flush=True)
         
     # combined the replicates
     print("start combining the matricies ...",
           flush=True)
     combined_df = combined_result(correlation_dfs, mode)
-    combined_df.to_csv(out_dir + "combined_results.csv", index="False")
+    combined_df.to_csv(out_dir + "combined_results.csv", index=None)
     print("done\n", flush=True)
         
     return 0     

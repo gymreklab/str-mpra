@@ -100,6 +100,7 @@
             --mode Uber \
             --datadir /storage/MPRA/hSTR1/Date_Initial_Expression/outputs/ \
             --numreplicate 3 \
+            --refFrequency /storage/q5gong/str-mpra/design-uber/round1_probes_sequency_reference.csv \
             --outdir /storage/MPRA/hSTR1/Date_Initial_Expression/outputs/ " > /storage/MPRA/hSTR1/Date_Initial_Expression/initial_analysis.out 2>&1 &
         ```
 - note
