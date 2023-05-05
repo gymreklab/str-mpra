@@ -103,7 +103,7 @@ def ratio_pearson_correlation (in_df, rep_int, mode, motif_dict=None, frequency_
                                                              df.STR, 
                                                              df.bc_count,
                                                              df.type):
-        if mode == "STR":
+        if mode == "hSTR":
             motif = motif_dict[STR + "_" + type_STR]
             original_motif = motif
             frequency = get_repeat_frequency(type_STR)
@@ -177,7 +177,7 @@ def ratio_pearson_correlation (in_df, rep_int, mode, motif_dict=None, frequency_
     ratio_df = ratio_df.reset_index()
     ratio_df = ratio_df.rename(columns={'index':'barcode'})
     if mode == "hSTR":
-        ratio_df = ratio_df[ratio_df.columns.drop(['original_motif'])]
+        ratio_df = ratio_df[ratio_df.columns.drop(['original motif'])]
     
     correlation_df = pd.DataFrame(correlation_dict).transpose()
     correlation_df = correlation_df.reset_index()
@@ -296,7 +296,7 @@ def combined_result (correlations, mode):
     
     for key in statistics:
         STR_motif = key.split("_")
-        STR = STR_motif[0] + STR_motif[1] + STR_motif[2]
+        STR = STR_motif[0] + "_" + STR_motif[1] +"_" + STR_motif[2]
         motif = STR_motif[3]
 
         betas = statistics[key]["betas"]
