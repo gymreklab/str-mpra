@@ -255,8 +255,8 @@ def GenerateVariableRegion(chrom, str_start, str_end, \
 		else:
 			str_region = GenerateRandomSequence(seq_len, gcperc=0.5)
 
-	### Return entire variable region
-	return (left_flank + str_region + right_flank), match_ref
+	### Return component of the variable region
+	return left_flank, str_region, right_flank, match_ref
 
 def GetFiller(len_var_reg):
 	"""
@@ -368,6 +368,10 @@ def main():
 	# Set up output file
 	f_oligo = open(args.out + ".oligos.tab", "w")
 	f_split = open(args.out + ".oligos.split.tab", "w")
+    
+	f_array = open(args.out + "_array_probes_split.tsv", "w")
+	f_array.write("id\tmotif\tallele\tstrand\tleft_flank\tstr_seq\tright_flank\tfiller_seq\tprobe_seq\n")
+    
 	f_log = open(args.out + ".log", "w")
 	f_log.write("##################\n")
 	f_log.write("Command: " + " ".join(sys.argv)+"\n")
@@ -426,13 +430,21 @@ def main():
 						f_log.write(msg)
 						continue
 					# Step 1: generate the variable flanking + STR region 
-					variable_region, match_ref = GenerateVariableRegion(chrom, str_start, str_end, \
+					left_flank, str_region, right_flank, match_ref = GenerateVariableRegion(chrom, \
+															str_start, str_end, \
 															alen, repeat_unit, motif, \
 															max_bp_len, max_context_size, \
 															genome)
+					variable_region = left_flank + str_region + right_flank
 					# Step 2: Generate the full oligo for both the sequence and the reverse complement
 					oligo_num = 0
 					for vreg in [variable_region, utils.ReverseComplement(variable_region)]:
+						if oligo_num != 0:                            
+							# reverse complement the sequence 
+							left_flank = utils.ReverseComplement(left_flank)
+							str_region = utils.ReverseComplement(str_region)
+							right_flank = utils.ReverseComplement(right_flank)
+                            
 						if not CheckCutSites(FIVE_PRIME_ADAPT + vreg):
 							msg = "   [%s] Skipping len=%s and motif=%s. Failed cut site check.\n"%(locname, alen, motif)
 							if args.debug: sys.stderr.write(msg)
@@ -445,6 +457,9 @@ def main():
 						oligo_list = GenerateOligo(vreg, debug=args.debug)
 						f_oligo.write("\t".join([oligo_name, ''.join(oligo_list)])+"\n")
 						f_split.write("\t".join([oligo_name] + oligo_list)+"\n")
+						f_array.write(str_id + "\t" + repeat_unit + "\t" + motif + "_" + str(alen) + "\t" \
+										+ str(oligo_num) + "\t" + left_flank + "\t" + str_region + "\t" + right_flank + "\t" \
+										+ oligo_list[3] + "\t" + ''.join(oligo_list) + "\n")
 						oligo_num += 1
 						probecount += 1
 			
@@ -453,12 +468,16 @@ def main():
 			f_log.write(msg)
 	f_oligo.close()
 	f_split.close()
+	f_array.close()
 
 	######## Second pass to remove any redundant probes ###########
-	filtered = 0
-	kept = 0
+	split_filtered = 0
+	split_kept = 0
+	array_filtered = 0 
+	array_kept = 0
 	probes = set()
 	f_filt = open(args.out + ".oligos.filtered.tab", "w")
+	f_array_filt = open(args.out + "_filtered_array_probes_split.tsv", "w")
 	f_filt_seqonly = open(args.out + ".oligos.filtered.seqonly.txt", "w")
 	f_filt_seqonly.write("Sequence\n")
 	with open(args.out + ".oligos.tab", "r") as f:
@@ -468,12 +487,29 @@ def main():
 				msg = "Removing %s. Redundant probe.\n"%line.strip().split()[0]
 				if args.debug: sys.stderr.write(msg)
 				f_log.write(msg)
-				filtered += 1
+				split_filtered += 1
 			else:
 				probes.add(probe)
 				f_filt.write(line.strip()+"\n")
 				f_filt_seqonly.write(line.strip().split()[1]+"\n")
-				kept += 1
+				split_kept += 1
+	# could have written a function but nah
+	probes = set()
+	with open(args.out + "_array_probes_split.tsv", "r") as f:
+		for line in f:
+			probe = line.strip().split("\t")[8]
+			if probe in probes:
+				msg = "Removing %s. Redundant probe in array_probes_split.tsv.\n"%(line.strip().split()[0] + "_" + \
+																					line.strip().split()[1] + "_" + \
+																					line.strip().split()[2])
+				if args.debug: sys.stderr.write(msg)
+				f_log.write(msg)
+				array_filtered += 1
+			else:
+				probes.add(probe)
+				f_array_filt.write(line.strip()+"\n")
+				array_kept += 1
+                
 	manually_added = 0
 	if args.add_probes:
 		with open(args.add_probes, "r") as f:
@@ -483,7 +519,7 @@ def main():
 					msg = "Removing manually added probe %s. Redundant probe.\n"%line.strip().split()[0]
 					if args.debug: sys.stderr.write(msg)
 					f_log.write(msg)
-					filtered += 1
+					split_filtered += 1
 				else:
 					msg = "Keeping manually added probe %s. Redundant probe.\n"%line.strip().split()[0]
 					if args.debug: sys.stderr.write(msg)
@@ -491,10 +527,10 @@ def main():
 					probes.add(probe)
 					f_filt.write(line.strip()+"\n")
 					f_filt_seqonly.write(line.strip().split()[1]+"\n")
-					kept += 1
+					split_kept += 1
 					manually_added += 1
-	msg = "Kept %s probes (%s manually added). "%(kept, manually_added)
-	msg += "Filtered %s total redundant probes\n"%(filtered)
+	msg = "Kept %s probes (%s manually added). "%(split_kept, manually_added)
+	msg += "Filtered %s total redundant probes\n"%(split_filtered)
 	if args.debug: sys.stderr.write(msg)
 	f_log.write(msg)
 	f_filt.close()

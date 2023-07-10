@@ -608,12 +608,12 @@ def main(args):
     
     # checking input file existence
     if not os.path.exists(input_files):
-        common.WARNING("Error: %s does not exist"%input_files)
+        print("Error: %s does not exist"%input_files)
         return 1    
 
     # checking if association.tsv exists
     if not os.path.exists(association_path):
-        common.WARNING("Error: %s does not exist"%association_path)
+        print("Error: %s does not exist"%association_path)
         return 1
     
     # checking if out_dir exists, if not, create the out_dir
@@ -636,7 +636,7 @@ def main(args):
         # checking if the above files exists
         for other_file in other_paths:
             if not os.path.exists(other_file):
-                common.WARNING("Error: %s does not exist"%other_file)
+                print("Error: %s does not exist"%other_file)
                 return 1
 
     # parsing the input file 
