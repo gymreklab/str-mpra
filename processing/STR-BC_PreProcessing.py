@@ -9,6 +9,9 @@ import copy
 import gzip
 import Levenshtein
 import os
+import numpy as np
+import pandas as pd
+import pysam
 import subprocess
 import sys
 import utils
@@ -104,6 +107,112 @@ def check_R2 (sequence, levenshtein_matching_length,
     # pass the check
     return True
 
+def cigar_check (cigar_string, R2_length):
+    
+    """
+    check the cigar string for qc
+    parameter: 
+      cigar_string - the cigar string from col 6 of sam file 
+    output:
+      if cigar string pass the check, 
+      return check_result = cigar_string
+      if not, return check_result = "failed"
+    """
+    
+    # internal thresholds used
+    expected_length = 4 
+    start_M_thres = 25 # min num bp match at start
+    end_M_thres = 20 # min num bp match at end 
+    indel_thres = 2 # max num bp of indel allowance 
+    
+    # check
+    perfect_match = str(R2_length) + "M"
+    if cigar_string == perfect_match:
+        # no need to check if cigar string 
+        # is perfetc match
+        return cigar_string
+    
+    parse_cigar = list(Cigar(cigar_string).items())
+    
+    if len(parse_cigar) > expected_length:
+        # long cigar string, filtered 
+        return "failed"
+    else:
+        start = parse_cigar[0]
+        end = parse_cigar[-1]
+        mid = parse_cigar[1:-1]
+        
+        if ((start[1]=="M" and start[0] >= start_M_thres) and
+            (end[1]=="M" and end[0] >= end_M_thres)):
+            
+            for sub_cigar in mid:
+                if ((sub_cigar[1] in ["I", "D"] ) and
+                    (sub_cigar[0] < indel_thres)):
+                    check_result = cigar_string
+                else:
+                    # cigar string either have modification 
+                    # other than indel, or the indel is larger
+                    # than the corresponding threshold
+                    return "failed"    
+        else:
+            # cigar string does not start and end with 
+            # matching sequence that pass corresponding 
+            # threshold, filtered
+            return "failed"
+    
+    return check_result
+
+def load_bam(bam_path, expected_length, sum_file):
+    data_barcodes = []
+    data_strs = []
+
+    # keep track of read filtering 
+    num_filt = 0
+    remained = 0
+    total_read = 0
+    num_perfect = 0
+    perfect_cig = str(expected_length) + "M"
+    
+    # load aligned reads
+    bam_file = pysam.AlignmentFile(bam_path, mode = 'rb')
+    bam_iter = bam_file.fetch(until_eof = True)
+
+    for read in bam_iter:
+        keep_read = False
+        total_read += 1
+
+        # obtain read info 
+        barcode = str(read.qname)[-20:]
+        STR = str(read.reference_name)
+        cigar_string = str(read.cigarstring)
+        length = len(read.query)
+
+        # keep read that is the expected read length 
+        # and does find a matching STR 
+        if (length == expected_length) & ("STR" in STR):
+            if cigar_check(cigar_string, expected_length) != "failed":
+                keep_read = True
+                if cigar_string == perfect_cig: num_perfect += 1
+        if keep_read:
+            remained += 1
+            # count BC and STR
+            data_barcodes.append(barcode)
+            data_strs.append(STR)
+        else:
+            num_filt += 1
+
+    bam_file.close()
+    percent_remain = "{:.2f}".format((remained/total_read)*100)
+    # write in summary 
+    sum_file.write("aligned and pass association qc," + str(remained) + "\n")
+    sum_file.write("% of total," + str(percent_remain) + "\n")
+    sum_file.write("perfect cigar," + str(num_perfect) + "\n")
+    df =pd.DataFrame({"barcode": data_barcodes,
+        "STR": data_strs})
+    df["count"] = 1
+    df = df.groupby(["barcode","STR"], as_index=False).agg({"count": np.sum})
+    return df
+
 def filter_read (path_R1, path_R2,
                  file_type, out_prefix, 
                  R1_lev_matching_length,
@@ -134,9 +243,9 @@ def filter_read (path_R1, path_R2,
     """
     
     # keep tracks of filtering 
-    total_pair = -1
-    filtered_pair = -1
-    remained_pair = -1
+    total_pair = 0
+    filtered_pair = 0
+    remained_pair = 0
     
     # read file
     if file_type not in ["fastq.gz", "fastq", "fq", "fq.gz"]:
@@ -169,10 +278,7 @@ def filter_read (path_R1, path_R2,
                 # record the read
                 record_R1 = process(lines_R1)
                 record_R2 = process(lines_R2)
-                if total_pair == -1:
-                    total_pair = 1
-                else:
-                    total_pair += 1
+                total_pair += 1
 
                 # record R1
                 R1_id = record_R1["read_id"]
@@ -193,12 +299,7 @@ def filter_read (path_R1, path_R2,
                                     R2_lev_threshold)
                 
                 if R1_pass & R2_pass:
-                    # pass the check
-                    if remained_pair == -1:
-                        remained_pair = 1
-                    else:
-                        remained_pair += 1
-
+                    remained_pair += 1
                     # write the read to output 
                     barcode = R1_seq[0:20]
                     R2_id_lists = list(R2_id.split(" "))
@@ -208,10 +309,7 @@ def filter_read (path_R1, path_R2,
                                         R2_sign + "\n" + R2_qual + "\n").encode())
                 else:
                     # failed the check
-                    if filtered_pair == -1:
-                        filtered_pair = 1
-                    else:
-                        filtered_pair += 1
+                    filtered_pair += 1
                 
                 # empty the line list 
                 lines = 0
@@ -228,7 +326,6 @@ def filter_read (path_R1, path_R2,
         file_R1.close()
         file_R2.close()
         file_out.close()
-        sum_file.close()
 
 def bwamem_alignment (ref_path, read2_path, out_path):
     """
@@ -254,12 +351,14 @@ def bwamem_alignment (ref_path, read2_path, out_path):
     
     with open(out_path, "w") as bam_file:
         subprocess.call(("bwa mem -t 12 -L 100 -k 8 -O 5 {bwa_ref} {reads} |\
-                         /usr/local/bin/samtools view -bS")
+                         /usr/local/bin/samtools view -bS |\
+                         samtools sort -O bam")
                         .format(bwa_ref = ref_path, 
                                 reads = read2_path), 
                         shell=True, stdout=bam_file, 
                         stderr=open(out_path + ".bwa.log", "w"))
-        
+    os.system("samtools index %s"%out_path)
+
 def getargs():
     parser = argparse.ArgumentParser()
     # input file & output directory 
@@ -286,6 +385,8 @@ def getargs():
     filter_group.add_argument("--R2_thres",
                               help="Maximum levenshtein score required to kept the read, default is 0",
                               type=int, default=0) 
+    filter_group.add_argument("--len", help="Expected read length",
+                              type=int, required=True)
     # get argument
     args = parser.parse_args()
     
@@ -340,8 +441,24 @@ def main(args):
 
     # Load BAM to get STR-BC table
     utils.MSG("Loading STR-BC info")
+    bc_str_df = load_bam(out_bam, args.len, sum_file)
+    bc_str_df.to_csv(args.outprefix +  ".raw_association.tsv", \
+        sep="\t", index=False)
 
+    # Filter 1: remove BCs corresponding to >1 STR
+    # TODO
 
+    # Filter 2: BC occurrence
+    # TODO
+
+    # Filter 3: Num. BCs per STR
+    # TODO
+
+    # Write output file
+    utils.MSG("Writing final STR-BC association file")
+    bc_str_df.to_csv(args.outprefix + ".association.tsv", \
+        sep="\t", index=False)
+    sum_file.close()
     utils.MSG("Done!")
     return 0
 

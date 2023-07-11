@@ -35,7 +35,7 @@ Basic usage (using example files in this repo):
   --read1 test_files/test_reads1.fq.gz \
   --read2 test_files/test_reads2.fq.gz \
   --bwaref test_files/array_probes_human_fullprobe_151bp.fa \
-  --outprefix test_output/test
+  --outprefix test_output/test --len 135
 ```
 
 Required options:
