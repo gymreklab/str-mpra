@@ -1,7 +1,7 @@
 # MPRA processing 
 
 TODO:
-* combine STR-BC preprocessing to one script (clean up part 1)
+* can we infer --len?
 * put STR-BC plotting in a separate script
 
 ## Required pcakges
@@ -12,10 +12,7 @@ See `requirements.txt`.
 
 The STR MPRA process consists of two sequencing runs:
 
-1. The STR-BC association library is used to determine which STR sequence each barcode is attached to. Read 1 contains barcode information, and read 2 contains the variable region. Preprocessing of this library is performed with the following scripts:
-
-* `STR-BC_PreProcessing.py`: performs mapping and filtering of raw reads
-* `STR-BC_Association.py`: obtains the STR-BC association file `associations.tsv`
+1. The STR-BC association library is used to determine which STR sequence each barcode is attached to. Read 1 contains barcode information, and read 2 contains the variable region. Preprocessing of this library is performed with script: `STR-BC_PreProcessing.py`. 
 
 2. The EXPR library is used to count observed barcodes in gDNA and cDNA libraries. Preprocessing of this library is performed with the following scripts:
 
@@ -26,7 +23,7 @@ Additional options to each script are described below.
 
 ## STR-BC Association
 
-### Step 1: Mapping and filtering raw reads
+The script `STR-BC_PreProcessing.py` performs read filtering and mapping, and outputs a list of STR-barcode associations.
 
 Basic usage (using example files in this repo):
 
@@ -41,7 +38,8 @@ Basic usage (using example files in this repo):
 Required options:
 * `--read1 <STR>` and `--read2 <STR>`: give paths to the reads (fastq or fasta format)
 * `--bwaref <STR>`: gives the path to the bwa-indexed reference fasta for the array
-* `--outdir <STR>`: gives the output directory to store results in
+* `--outprefix <STR>`: prefix to name output files
+* `--len <INT>`: Expected read length
 
 Additional options for Levenshtein filtering:
 
@@ -50,38 +48,26 @@ Additional options for Levenshtein filtering:
 * `--R1_thres <int>`: Maximum levenshtein score required to kept the read, default is 0
 * `--R2_thres <int>`: Maximum levenshtein score required to kept the read, default is 0
 
-This script outputs:
-* `summary_STRBC_preprocessing.csv` contains the total number of read pairs considered, the number of read pairs remaining after filtering, and the perfect of read pairs remaining after filtering
-* `filtered.fq.gz`: filtered read 2 fastq file
-* `filtered.bam`: aligned read 2
-
-### Step 2: Obtain STR_BC associations
-
-Basic usage (using example files in this repo):
-
-```shell
-./STR-BC_Association.py \
-  --bam test_output/filtered.bam \
-  --len 135 \
-  --outdir test_output/
-```
-
-Required options:
-* `--bam <STR>`: path to BAM file output by step 1
-* `--outdir <STR>`: gives the output directory to store results in
-* `--len <INT>`: Expected read length
-
-Additional arguments for filtering:
+Additional arguments for STR-BC filtering:
 * `--occurrence <INT>`: Minimum required occurence for a unique STR-BC pair
 * `--minBarcode  <INT>`: Minimum number of unique barcodes required to be associated per STR
 
 This script outputs:
-* `summary_STRBC_association.csv`: contains summary info about passing vs. filtered reads
-* `association.tsv`
+* `$outprefix.summary.csv`: contains summary log info
+* `$outprefix.filtered.fq.gz`: filtered read 2 fastq file
+* `$outprefix.filtered.bam`: aligned read 2
+* `$outprefix.filtered.bam.bai`: index of BAM file for aligned read 2
+* `$outprefix.raw_association.tsv`: unfiltered list of STR-BC associations
+* `$outprefix.association.tsv`: filtered STR-BC associations
+
+Additional arguments for STR-BC filtering:
+* `--occurrence <INT>`: Minimum required occurence for a unique STR-BC pair
+* `--minBarcode  <INT>`: Minimum number of unique barcodes required to be associated per STR
 
 The following filters are applied:
 * Remove barcodes not associated with exactly 1 STR
 * Remove STR-BC pairs supported by less than `occurrence` number of reads
+* Remove STRs with fewer than `minBarcode` unique barcodes after filtering.
 
 ## Expression 
 - read qc and processing via `Expression_QC_Processing.py`

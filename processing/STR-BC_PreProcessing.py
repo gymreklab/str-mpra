@@ -387,6 +387,10 @@ def getargs():
                               type=int, default=0) 
     filter_group.add_argument("--len", help="Expected read length",
                               type=int, required=True)
+    filter_group.add_argument("--occurrence", help="Minimum required occurence for a unique STR-BC pair",
+                              type=int, default=1)
+    filter_group.add_argument("--minBarcode", help="Minimum number of unique barcodes required to be associated per STR",
+                              type=int, default=1)
     # get argument
     args = parser.parse_args()
     
@@ -401,6 +405,12 @@ def InferFileType(fqfile):
         return "fq"
     elif fqfile.endswith(".fq.gz"):
         return "fq.gz"
+
+def SummarizeBCSTRCount(bc_str_df, sum_file, desc):
+    num_bcs = len(set(bc_str_df["barcode"]))
+    num_strs = len(set(bc_str_df["STR"]))
+    sum_file.write("%s - unique BCs,%s\n"%(desc, num_bcs))
+    sum_file.write("%s - unique STRs,%s\n"%(desc, num_strs))
 
 def main(args):
     # input/output
@@ -444,15 +454,25 @@ def main(args):
     bc_str_df = load_bam(out_bam, args.len, sum_file)
     bc_str_df.to_csv(args.outprefix +  ".raw_association.tsv", \
         sep="\t", index=False)
+    SummarizeBCSTRCount(bc_str_df, sum_file, "Before filtering")
 
     # Filter 1: remove BCs corresponding to >1 STR
-    # TODO
+    utils.MSG("Filter: remove BCs corresponding to >1 STR")
+    bc_str_df = bc_str_df.drop_duplicates(subset="barcode", keep=False)
+    SummarizeBCSTRCount(bc_str_df, sum_file, "After filtering BCs associated with >1 STR")
 
-    # Filter 2: BC occurrence
-    # TODO
+    # Filter 2: STR-BC occurrence
+    utils.MSG("Filter: Filter STR-BC pairs not supported by enough reads")
+    bc_str_df = bc_str_df[bc_str_df["count"]>=args.occurrence]
+    SummarizeBCSTRCount(bc_str_df, sum_file, "After filtering STR-BC with count < %s"%args.occurrence)
 
     # Filter 3: Num. BCs per STR
-    # TODO
+    utils.MSG("Filter: Filter STRs not supported by enough barcodes")
+    str_supp = bc_str_df.groupby(["STR"], as_index=False).agg({"barcode": len})
+    str_supp.rename({"barcode": "num.barcodes"}, axis=1, inplace=True)
+    bc_str_df = pd.merge(bc_str_df, str_supp, on=["STR"])
+    bc_str_df = bc_str_df[bc_str_df["num.barcodes"]>=args.minBarcode]
+    SummarizeBCSTRCount(bc_str_df, sum_file, "After filtering STRs with < %s barcodes"%args.minBarcode)
 
     # Write output file
     utils.MSG("Writing final STR-BC association file")
