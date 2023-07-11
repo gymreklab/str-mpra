@@ -218,10 +218,7 @@ def filter_read (path_R1, path_R2,
                 lines_R1 = []
                 lines_R2 = []
         
-        # print output message
-        percent_remain = "{:.2f}".format((remained_pair/total_pair)*100)
-        utils.MSG("finished writing filtered reads to " + fname)
-        
+        percent_remain = "{:.2f}".format((remained_pair/total_pair)*100)        
         # write in summary 
         sum_file.write("Total reads," + str(total_pair) + "\n")
         sum_file.write("Reads remaining," + str(remained_pair) + "\n")
@@ -328,20 +325,24 @@ def main(args):
     # create summary.csv file 
     sum_file = open(args.outprefix + ".summary.csv", "w")
     
-    # process reads 
-    utils.MSG("start filtering reads...")
+    # Filter reads to get new fq for read2
+    utils.MSG("Filter STR-BC Reads...")
     filter_read(args.read1, args.read2,
                  file_type, args.outprefix, 
                  args.R1_match, args.R1_thres, 
                  args.R2_match, args.R2_thres,
                  sum_file)
-    utils.MSG("filtering done")
 
-    # alignment on read 2
+    # Perform alignment on read 2 only
+    utils.MSG("Align filtered read 2 to " + args.bwaref)
     out_bam = args.outprefix + ".filtered.bam"
-    utils.MSG("start aligning filtered reads to " + args.bwaref)
     bwamem_alignment(args.bwaref, args.outprefix + ".filtered.fq.gz", out_bam)
-    utils.MSG("alignment done")
+
+    # Load BAM to get STR-BC table
+    utils.MSG("Loading STR-BC info")
+
+
+    utils.MSG("Done!")
     return 0
 
 def run():
