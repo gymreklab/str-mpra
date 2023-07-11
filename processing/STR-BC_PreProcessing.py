@@ -13,6 +13,7 @@ import os
 import numpy as np
 import pandas as pd
 import pysam
+import random
 import subprocess
 import sys
 import utils
@@ -203,7 +204,9 @@ def load_bam(bam_path, expected_length, sum_file):
             num_filt += 1
 
     bam_file.close()
-    percent_remain = "{:.2f}".format((remained/total_read)*100)
+    if total_read == 0:
+        percent_remain = 0
+    else: percent_remain = "{:.2f}".format((remained/total_read)*100)
     # write in summary 
     sum_file.write("aligned and pass association qc," + str(remained) + "\n")
     sum_file.write("% of total," + str(percent_remain) + "\n")
@@ -220,7 +223,7 @@ def filter_read (path_R1, path_R2,
                  R1_lev_threshold, 
                  R2_lev_matching_length,
                  R2_lev_threshold,
-                 sum_file):
+                 sum_file, downsample):
     """
     to filter reads and write the filter read 
     to a new read file of the same file type
@@ -295,13 +298,22 @@ def filter_read (path_R1, path_R2,
                 R2_qual = record_R2["qual"]
                 expected_len = len(R2_seq)
 
+                # Apply downsample
+                if downsample != 1:
+                    if random.random() > downsample:
+                        # Rest to next read
+                        lines = 0
+                        lines_R1 = []
+                        lines_R2 = []
+                        continue
+
                 # check the read 
                 R1_pass = check_R1(R1_seq, R1_lev_matching_length,
                                     R1_lev_threshold)
                 R2_pass = check_R2(R2_seq, R2_lev_matching_length,
                                     R2_lev_threshold)
                 
-                if R1_pass & R2_pass:
+                if R1_pass and R2_pass:
                     remained_pair += 1
                     # write the read to output 
                     barcode = R1_seq[0:20]
@@ -375,7 +387,7 @@ def getargs():
                              required=True)
     inout_group.add_argument("--outprefix", help="Prefix to name output files", type=str,
                              required=True)
-    # levenshtein filter 
+    # Filtering options
     filter_group = parser.add_argument_group("Levenstein filtering threshold")
     filter_group.add_argument("--R1_match",
                               help="Length of read 1 that will be use for filter, default is 5",
@@ -395,6 +407,10 @@ def getargs():
                               type=int, default=1)
     filter_group.add_argument("--minBarcode", help="Minimum number of unique barcodes required to be associated per STR",
                               type=int, default=1)
+    # Additional options
+    other_group = parser.add_argument_group("Additional options")
+    other_group.add_argument("--downsample", help="Downsample reads used to this fraction",
+        type=float, default=1)
     # get argument
     args = parser.parse_args()
     
@@ -446,7 +462,7 @@ def main(args):
                  file_type, args.outprefix, 
                  args.R1_match, args.R1_thres, 
                  args.R2_match, args.R2_thres,
-                 sum_file)
+                 sum_file, args.downsample)
     if args.len != -1: expected_len = -1 # Not sure when we would want this?
     if expected_len == -1:
         MSG("Error inferring expected read2 length")

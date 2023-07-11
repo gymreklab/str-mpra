@@ -22,7 +22,7 @@ Additional options to each script are described below.
 
 ## STR-BC Association
 
-The script `STR-BC_PreProcessing.py` performs read filtering and mapping, and outputs a list of STR-barcode associations.
+The script `STR-BC_PreProcessing.py` performs read filtering and mapping, and outputs a list of STR-barcode associations. It is recommended to use default (lenient) filtering options at this stage, and further filtering of barcodes can be done at later stages.
 
 Basic usage (using example files in this repo):
 
@@ -40,7 +40,6 @@ Required options:
 * `--outprefix <STR>`: prefix to name output files
 
 Additional options for Levenshtein filtering:
-
 * `--R1_match <int>`: Length of read 1 that will be use for levenshtein filter, default is 5
 * `--R2_match <int>`: Length of read 2 that will be use for levenshtein filter, default is 16
 * `--R1_thres <int>`: Maximum levenshtein score required to kept the read, default is 0
@@ -50,6 +49,7 @@ Additional arguments for STR-BC filtering:
 * `--len <INT>`: Expected read length for CIGAR filtering. By default, infer from raw read 2
 * `--occurrence <INT>`: Minimum required occurence for a unique STR-BC pair
 * `--minBarcode  <INT>`: Minimum number of unique barcodes required to be associated per STR
+* `--downsample <FLOAT>`: Downsample read pairs by this fraction
 
 This script outputs:
 * `$outprefix.summary.csv`: contains summary log info
