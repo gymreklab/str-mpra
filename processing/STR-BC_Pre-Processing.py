@@ -4,13 +4,14 @@ script for pre-processing of STR-BC assocition
 """
 
 # imports
-import os
-import sys
+import argparse
 import copy
 import gzip
-import argparse
-import subprocess
 import Levenshtein
+import os
+import subprocess
+import sys
+import utils
 
 # helper functions
 def process(lines=None):
@@ -146,24 +147,21 @@ def filter_read (path_R1, path_R2,
            "resulting in {remain} pairs of reads({percent}%).")
     
     # read file
-    if file_type not in ["fastq.gz", "fastq", "fq"]:
-        raise ValueError("File type is not fastq.gz, fastq, or fq")
+    if file_type not in ["fastq.gz", "fastq", "fq", "fq.gz"]:
+        raise ValueError("File type is not fastq.gz, fq.gz, fastq, or fq")
       
     else:        
-        fname = "filtered" + "." + file_type
+        fname = os.path.join(out_dir, "filtered" + ".fq.gz")
         
         if ".gz" in file_type:
             # input file
             file_R1 = gzip.open(path_R1, "rt")
             file_R2 = gzip.open(path_R2, "rt")
-            # output file
-            file_out = gzip.open(out_dir + fname, "wb")
         else:
             # input file
             file_R1 = open(path_R1, "r")
             file_R2 = open(path_R2, "r")
-            #output file
-            file_out = open(out_dir + fname, "w")
+        file_out = open(fname, "wb")
             
         # start reading the reads
         lines = 0
@@ -213,18 +211,11 @@ def filter_read (path_R1, path_R2,
                     barcode = R1_seq[0:20]
                     R2_id_lists = list(R2_id.split(" "))
                     R2_id = (R2_id_lists[0] + ":" + barcode +
-                             " " + R2_id_lists[1])
-                    
-                    
-                    if ".gz" in file_type:                       
-                        file_out.write((R2_id + "\n" + R2_seq + "\n" + 
+                             " " + R2_id_lists[1])                    
+                    file_out.write((R2_id + "\n" + R2_seq + "\n" + 
                                         R2_sign + "\n" + R2_qual + "\n").encode())
-                    else:
-                        file_out.write(R2_id + "\n" + R2_seq + "\n" + 
-                                       R2_sign + "\n" + R2_qual + "\n")
-
                 else:
-                    # faile the check
+                    # failed the check
                     if filtered_pair == -1:
                         filtered_pair = 1
                     else:
@@ -237,17 +228,15 @@ def filter_read (path_R1, path_R2,
         
         # print output message
         percent_remain = "{:.2f}".format((remained_pair/total_pair)*100)
-        print(txt.format(filt = filtered_pair,
+        utils.MSG(txt.format(filt = filtered_pair,
                          total = total_pair, 
                          R1_lev_len = R1_lev_matching_length,
                          R1_lev_thres = R1_lev_threshold,
                          R2_lev_len = R2_lev_matching_length,
                          R2_lev_thres = R2_lev_threshold,
                          remain = remained_pair,
-                         percent = percent_remain),
-              flush=True)
-        print("finished writing filtered reads to " + out_dir + fname + "\n",
-              flush=True)
+                         percent = percent_remain))
+        utils.MSG("finished writing filtered reads to " + out_dir + fname + "\n")
         
         # write in summary 
         sum_file.write("total," + str(total_pair) + "\n")
@@ -259,10 +248,8 @@ def filter_read (path_R1, path_R2,
         file_R2.close()
         file_out.close()
         sum_file.close()
-        
 
 def bwamem_alignment (ref_path, read2_path, out_path):
-
     """
     perform alignment using bwamem
     parameter:
@@ -293,21 +280,16 @@ def bwamem_alignment (ref_path, read2_path, out_path):
         
 def getargs():
     parser = argparse.ArgumentParser()
-    
     # input file & output directory 
     inout_group = parser.add_argument_group("Input/Output")
     inout_group.add_argument("--read1", help="Path to read1 file", type=str,
                              required=True)
     inout_group.add_argument("--read2", help="Path to read2 file", type=str,
                              required=True)
-    inout_group.add_argument("--filetype", help="File type of reads", type=str, 
-                             choices=["fastq.gz", "fastq", "fq"],
-                             required=True)
     inout_group.add_argument("--bwaref", help="Path to ref.fa", type=str,
                              required=True)
     inout_group.add_argument("--outdir", help="Path to output directory", type=str,
                              required=True)
-    
     # levenshtein filter 
     filter_group = parser.add_argument_group("Levenstein filtering threshold")
     filter_group.add_argument("--R1_match",
@@ -321,71 +303,60 @@ def getargs():
                               type=int, default=16)
     filter_group.add_argument("--R2_thres",
                               help="Maximum levenshtein score required to kept the read, default is 0",
-                              type=int, default=0)
-    
+                              type=int, default=0) 
     # get argument
     args = parser.parse_args()
     
     return args
     
+def InferFileType(fqfile):
+    if fqfile.endswith(".fastq.gz"):
+        return "fastq.gz"
+    elif fqfile.endswith(".fastq"):
+        return "fastq"
+    elif fqfile.endswith(".fq"):
+        return "fq"
+    elif fqfile.endswith(".fq.gz"):
+        return "fq.gz"
+
 def main(args):
     # input/output
-    R1_path = args.read1
-    R2_path = args.read2
-    file_type = args.filetype
-    bwa_ref = args.bwaref
-    out_dir = args.outdir
+    file_type = InferFileType(args.read1)
 
-    # filtering related 
-    # levenshtein 
-    R1_lev_matching_length = args.R1_match
-    R1_lev_threshold = args.R1_thres
-    R2_lev_matching_length = args.R2_match
-    R2_lev_threshold = args.R2_thres
-    
     # check file existence 
-    if not os.path.exists(R1_path):
-        print("Error: %s does not exist"%R1_path)
+    if not os.path.exists(args.read1):
+        utils.MSG("Error: %s does not exist"%args.read1)
         return 1
     
-    if not os.path.exists(R2_path):
-        print("Error: %s does not exist"%R2_path)
+    if not os.path.exists(args.read2):
+        utils.MSG("Error: %s does not exist"%args.read2)
         return 1
     
-    if not os.path.exists(bwa_ref):
-        print("Error: %s does not exist"%bwa_ref)
+    if not os.path.exists(args.bwaref):
+        utils.MSG("Error: %s does not exist"%args.bwaref)
         return 1
     
     # checking if out_dir exists, if not, create the out_dir
-    if not os.path.exists(os.path.dirname(out_dir)):
-         os.mkdir(os.path.dirname(out_dir))
+    if not os.path.exists(os.path.dirname(args.outdir)):
+         os.mkdir(os.path.dirname(args.outdir))
             
     # create summary.csv file 
-    sum_file = open(out_dir + "summary.csv", "w")
+    sum_file = open(os.path.join(args.outdir, "summary.csv"), "w")
     
-    # process read 
-    print("start filtering reads...", 
-          flush=True)
-    filter_read (R1_path, R2_path,
-                 file_type, out_dir, 
-                 R1_lev_matching_length,
-                 R1_lev_threshold, 
-                 R2_lev_matching_length,
-                 R2_lev_threshold,
+    # process reads 
+    utils.MSG("start filtering reads...")
+    filter_read(args.read1, args.read2,
+                 file_type, args.outdir, 
+                 args.R1_match, args.R1_thres, 
+                 args.R2_match, args.R2_thres,
                  sum_file)
-    print("filtering done" + "\n", flush=True)
+    utils.MSG("filtering done")
 
     # alignment on read 2
-    out_bam = out_dir + "filtered.bam"
-    print("start aligning filtered reads to " + bwa_ref, 
-          flush=True)
-    bwamem_alignment(bwa_ref, (out_dir + "filtered." + file_type), out_bam)
-    print("alignment done" + "\n", 
-          flush=True)
-    
-    
-    
-    
+    out_bam = os.path.join(args.outdir, "filtered.bam")
+    utils.MSG("start aligning filtered reads to " + args.bwaref)
+    bwamem_alignment(args.bwaref, os.path.join(args.outdir, "filtered." + file_type), out_bam)
+    utils.MSG("alignment done")
     return 0
 
 def run():

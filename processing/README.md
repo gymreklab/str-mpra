@@ -1,37 +1,66 @@
 # MPRA processing 
 - location (snolax): `/storage/MPRA/str-mpra/processing/`
 
-## Package needed 
-- `os`
-- `sys`
-- `copy`
-- `gzip`
-- `numpy`
-- `Cigar`
-- `pandas`
-- `seaborn`
-- `argparse`
-- `subprocess`
-- `matplotlib`
-- `Levenshtein`
-- `scipy.stats`
+## Required pcakges
 
-## Association
-- __Association Read Pre-processing via `STR-BC_Pre-Processing.py`__
-    - usage \
-      type `STR-BC_Pre-Processing.py --help` in terminal for detail, below is a sample command for modification
-    ```shell
-    nohup sh -c -u "/storage/q5gong/str-mpra/processing/STR-BC_Pre-Processing.py \
-      --read1 /storage/nextseq_demultiplex/NextSeqDate_Project/MPRA_read1.fastq.gz \
-      --read2 /storage/nextseq_demultiplex/NextSeqDate_Project/MPRA_read2.fastq.gz \
-      --filetype fastq.gz \
-      --bwaref /storage/q5gong/MPRA-Susan/array_probes_human_fullprobe_151bp.fa \
-      --outdir /storage/MPRA/hSTR1/Date_Initial_Association/outputs/ \
-      --R1_match 5 \
-      --R1_thres 0 \
-      --R2_match 16 \
-      --R2_thres 0" > /storage/MPRA/hSTR1/Date_Initial_Association/pre_processing.out 2>&1 &
-    ```
+See `requirements.txt`.
+
+## Pipeline description
+
+The STR MPRA process consists of two sequencing runs:
+
+1. The STR-BC association library is used to determine which STR sequence each barcode is attached to. Read 1 contains barcode information, and read 2 contains the variable region. Preprocessing of this library is performed with the following scripts:
+
+* `STR-BC_Pre-Processing.py`: performs mapping and filtering of raw reads
+* `STR-BC_Association_v3.py`: obtains the STR-BC association file `associations.tsv`
+
+2. The EXPR library is used to count observed barcodes in gDNA and cDNA libraries. Preprocessing of this library is performed with the following scripts:
+
+* `Expression_QC_Processing.py`: TODO
+* `Expression_Initial_Analysis.py`: TODO
+
+Additional options to each script are described below.
+
+## STR-BC Association
+
+### Step 1: Mapping and filtering raw reads
+
+Basic usage (using example files in this repo):
+
+```shell
+./STR-BC_Pre-Processing.py \
+  --read1 test_files/test_reads1.fq.gz \
+  --read2 test_files/test_reads2.fq.gz \
+  --bwaref test_files/array_probes_human_fullprobe_151bp.fa \
+  --outdir test_output/
+```
+
+Required options:
+* `--read1` and `--read2`: give paths to the reads (fastq or fasta format)
+* `--bwaref`: gives the path to the bwa-indexed reference fasta for the array
+* `--outdir`: gives the output directory to store results in
+
+Additional options for Levenshtein filtering:
+
+* `--R1_match <int>`: Length of read 1 that will be use for levenshtein filter, default is 5
+* `--R2_match <int>`: Length of read 2 that will be use for levenshtein filter, default is 16
+* `--R1_thres <int>`: Maximum levenshtein score required to kept the read, default is 0
+* `--R2_thres <int>`: Maximum levenshtein score required to kept the read, default is 0
+
+This script outputs:
+* `summary.csv` contains the total number of read pairs considered, the number of read pairs remaining after filtering, and the perfect of read pairs remaining after filtering
+* `filtered.fq.gz`: filtered read 2 fastq file
+* `filtered.bam`: aligned read 2
+
+### Step 2: Obtain STR_BC associations
+
+Basic usage (using example files in this repo):
+
+```shell
+
+
+```
+
 - __Barcode-STR Association via `STR-BC_Association_v3.py`__
     - usage \
       type `STR-BC_Association_v3.py --help` in terminal for detail, below is a sample command for modification

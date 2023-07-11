@@ -1,0 +1,8 @@
+gzip
+numpy
+Cigar
+pandas
+seaborn
+matplotlib
+Levenshtein
+scipy
