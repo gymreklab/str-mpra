@@ -105,7 +105,7 @@ def check_R2 (sequence, levenshtein_matching_length,
     return True
 
 def filter_read (path_R1, path_R2,
-                 file_type, out_dir, 
+                 file_type, out_prefix, 
                  R1_lev_matching_length,
                  R1_lev_threshold, 
                  R2_lev_matching_length,
@@ -121,8 +121,8 @@ def filter_read (path_R1, path_R2,
             - type of read file, fastq.gz or fastq or fq
         3. read_type
             - type of read, R1 or R2
-        4. out_dir
-            - output directory 
+        4. out_prefix
+            - prefix to name output files
         5. R#_levenshetein_matching_length
             - the length of the sequence that will be 
               used to calculate levenshetein distancing 
@@ -138,20 +138,12 @@ def filter_read (path_R1, path_R2,
     filtered_pair = -1
     remained_pair = -1
     
-    # print message
-    txt = ("{filt} pairs of reads are filtered from {total} pairs of reads, " + 
-           "with a levenshtein matching length of {R1_lev_len} and " +
-           "threshold of {R1_lev_thres} for read 1, " + 
-           "and a levenshtein matching length of {R2_lev_len} and " +
-           "threshold of {R2_lev_thres} for read 2, " +
-           "resulting in {remain} pairs of reads({percent}%).")
-    
     # read file
     if file_type not in ["fastq.gz", "fastq", "fq", "fq.gz"]:
         raise ValueError("File type is not fastq.gz, fq.gz, fastq, or fq")
       
     else:        
-        fname = os.path.join(out_dir, "filtered" + ".fq.gz")
+        fname = out_prefix + ".filtered.fq.gz"
         
         if ".gz" in file_type:
             # input file
@@ -228,20 +220,12 @@ def filter_read (path_R1, path_R2,
         
         # print output message
         percent_remain = "{:.2f}".format((remained_pair/total_pair)*100)
-        utils.MSG(txt.format(filt = filtered_pair,
-                         total = total_pair, 
-                         R1_lev_len = R1_lev_matching_length,
-                         R1_lev_thres = R1_lev_threshold,
-                         R2_lev_len = R2_lev_matching_length,
-                         R2_lev_thres = R2_lev_threshold,
-                         remain = remained_pair,
-                         percent = percent_remain))
-        utils.MSG("finished writing filtered reads to " + out_dir + fname + "\n")
+        utils.MSG("finished writing filtered reads to " + fname)
         
         # write in summary 
-        sum_file.write("total," + str(total_pair) + "\n")
-        sum_file.write("remain," + str(remained_pair) + "\n")
-        sum_file.write("% of total," + str(percent_remain) + "\n")
+        sum_file.write("Total reads," + str(total_pair) + "\n")
+        sum_file.write("Reads remaining," + str(remained_pair) + "\n")
+        sum_file.write("Percent of total," + str(percent_remain) + "\n")
         
         # close the files
         file_R1.close()
@@ -276,7 +260,8 @@ def bwamem_alignment (ref_path, read2_path, out_path):
                          /usr/local/bin/samtools view -bS")
                         .format(bwa_ref = ref_path, 
                                 reads = read2_path), 
-                        shell=True, stdout=bam_file)
+                        shell=True, stdout=bam_file, 
+                        stderr=open(out_path + ".bwa.log", "w"))
         
 def getargs():
     parser = argparse.ArgumentParser()
@@ -288,7 +273,7 @@ def getargs():
                              required=True)
     inout_group.add_argument("--bwaref", help="Path to ref.fa", type=str,
                              required=True)
-    inout_group.add_argument("--outdir", help="Path to output directory", type=str,
+    inout_group.add_argument("--outprefix", help="Prefix to name output files", type=str,
                              required=True)
     # levenshtein filter 
     filter_group = parser.add_argument_group("Levenstein filtering threshold")
@@ -336,26 +321,26 @@ def main(args):
         utils.MSG("Error: %s does not exist"%args.bwaref)
         return 1
     
-    # checking if out_dir exists, if not, create the out_dir
-    if not os.path.exists(os.path.dirname(args.outdir)):
-         os.mkdir(os.path.dirname(args.outdir))
+    # checking if output directory exists, if not, create it
+    if not os.path.exists(os.path.dirname(args.outprefix)):
+         os.mkdir(os.path.dirname(args.outprefix))
             
     # create summary.csv file 
-    sum_file = open(os.path.join(args.outdir, "summary_STRBC_preprocessing.csv"), "w")
+    sum_file = open(args.outprefix + ".summary.csv", "w")
     
     # process reads 
     utils.MSG("start filtering reads...")
     filter_read(args.read1, args.read2,
-                 file_type, args.outdir, 
+                 file_type, args.outprefix, 
                  args.R1_match, args.R1_thres, 
                  args.R2_match, args.R2_thres,
                  sum_file)
     utils.MSG("filtering done")
 
     # alignment on read 2
-    out_bam = os.path.join(args.outdir, "filtered.bam")
+    out_bam = args.outprefix + ".filtered.bam"
     utils.MSG("start aligning filtered reads to " + args.bwaref)
-    bwamem_alignment(args.bwaref, os.path.join(args.outdir, "filtered." + file_type), out_bam)
+    bwamem_alignment(args.bwaref, args.outprefix + ".filtered.fq.gz", out_bam)
     utils.MSG("alignment done")
     return 0
 

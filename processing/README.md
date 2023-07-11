@@ -1,5 +1,8 @@
 # MPRA processing 
-- location (snolax): `/storage/MPRA/str-mpra/processing/`
+
+TODO:
+* combine STR-BC preprocessing to one script (clean up part 1)
+* put STR-BC plotting in a separate script
 
 ## Required pcakges
 
@@ -32,7 +35,7 @@ Basic usage (using example files in this repo):
   --read1 test_files/test_reads1.fq.gz \
   --read2 test_files/test_reads2.fq.gz \
   --bwaref test_files/array_probes_human_fullprobe_151bp.fa \
-  --outdir test_output/
+  --outprefix test_output/test
 ```
 
 Required options:
