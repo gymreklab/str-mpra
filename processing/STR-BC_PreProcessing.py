@@ -247,7 +247,8 @@ def filter_read (path_R1, path_R2,
     total_pair = 0
     filtered_pair = 0
     remained_pair = 0
-    
+    expected_len = -1
+
     # read file
     if file_type not in ["fastq.gz", "fastq", "fq", "fq.gz"]:
         raise ValueError("File type is not fastq.gz, fq.gz, fastq, or fq")
@@ -292,7 +293,8 @@ def filter_read (path_R1, path_R2,
                 R2_seq = record_R2["seq"]
                 R2_sign = record_R2["optional"]
                 R2_qual = record_R2["qual"]
-                
+                expected_len = len(R2_seq)
+
                 # check the read 
                 R1_pass = check_R1(R1_seq, R1_lev_matching_length,
                                     R1_lev_threshold)
@@ -327,6 +329,7 @@ def filter_read (path_R1, path_R2,
         file_R1.close()
         file_R2.close()
         file_out.close()
+        return expected_len
 
 def bwamem_alignment (ref_path, read2_path, out_path):
     """
@@ -386,8 +389,8 @@ def getargs():
     filter_group.add_argument("--R2_thres",
                               help="Maximum levenshtein score required to kept the read, default is 0",
                               type=int, default=0) 
-    filter_group.add_argument("--len", help="Expected read length",
-                              type=int, required=True)
+    filter_group.add_argument("--len", help="Expected read length. By default, infer from raw read 2",
+                              type=int, default=-1)
     filter_group.add_argument("--occurrence", help="Minimum required occurence for a unique STR-BC pair",
                               type=int, default=1)
     filter_group.add_argument("--minBarcode", help="Minimum number of unique barcodes required to be associated per STR",
@@ -439,11 +442,15 @@ def main(args):
     
     # Filter reads to get new fq for read2
     utils.MSG("Filter STR-BC Reads...")
-    filter_read(args.read1, args.read2,
+    expected_len = filter_read(args.read1, args.read2,
                  file_type, args.outprefix, 
                  args.R1_match, args.R1_thres, 
                  args.R2_match, args.R2_thres,
                  sum_file)
+    if args.len != -1: expected_len = -1 # Not sure when we would want this?
+    if expected_len == -1:
+        MSG("Error inferring expected read2 length")
+        sys.exit(1)
 
     # Perform alignment on read 2 only
     utils.MSG("Align filtered read 2 to " + args.bwaref)
@@ -452,7 +459,7 @@ def main(args):
 
     # Load BAM to get STR-BC table
     utils.MSG("Loading STR-BC info")
-    bc_str_df = load_bam(out_bam, args.len, sum_file)
+    bc_str_df = load_bam(out_bam, expected_len, sum_file)
     bc_str_df.to_csv(args.outprefix +  ".raw_association.tsv", \
         sep="\t", index=False)
     SummarizeBCSTRCount(bc_str_df, sum_file, "Before filtering")

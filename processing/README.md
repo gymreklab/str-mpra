@@ -1,7 +1,6 @@
 # MPRA processing 
 
 TODO:
-* can we infer --len?
 * put STR-BC plotting in a separate script
 
 ## Required pcakges
@@ -32,14 +31,13 @@ Basic usage (using example files in this repo):
   --read1 test_files/test_reads1.fq.gz \
   --read2 test_files/test_reads2.fq.gz \
   --bwaref test_files/array_probes_human_fullprobe_151bp.fa \
-  --outprefix test_output/test --len 135
+  --outprefix test_output/test
 ```
 
 Required options:
 * `--read1 <STR>` and `--read2 <STR>`: give paths to the reads (fastq or fasta format)
 * `--bwaref <STR>`: gives the path to the bwa-indexed reference fasta for the array
 * `--outprefix <STR>`: prefix to name output files
-* `--len <INT>`: Expected read length
 
 Additional options for Levenshtein filtering:
 
@@ -49,6 +47,7 @@ Additional options for Levenshtein filtering:
 * `--R2_thres <int>`: Maximum levenshtein score required to kept the read, default is 0
 
 Additional arguments for STR-BC filtering:
+* `--len <INT>`: Expected read length for CIGAR filtering. By default, infer from raw read 2
 * `--occurrence <INT>`: Minimum required occurence for a unique STR-BC pair
 * `--minBarcode  <INT>`: Minimum number of unique barcodes required to be associated per STR
 
