@@ -485,6 +485,9 @@ def getargs():
     
     return args
 
+def MSG(msg):
+    sys.stderr.write("[Expression_QC_Processing.py]: %s\n"%msg)
+
 def main(args):
     
     # input/output
@@ -508,7 +511,8 @@ def main(args):
     # minimum read count
     min_count = args.min_count
     min_barcode = args.min_barcode
-    
+
+    MSG("Performing basic checks...")
     # checking input file existence
     if not os.path.exists(input_files):
         common.WARNING("Error: %s does not exist"%input_files)
@@ -560,6 +564,7 @@ def main(args):
             else:
                 gDNA_names.append(line.rstrip())
 
+    MSG("check cDNA and gDNA input files...")
     # checking whether:
     # 1. cDNA list and gDNA list have matched length
     # 2. matches the input replicate number 
@@ -577,6 +582,7 @@ def main(args):
     # summary statistics dictionry 
     sum_dict = {}
 
+    MSG("Preprocess barcode counts...")
     # pre-processing and count the barcode 
     count_dicts = []
     for i in range(0, rep_num):
@@ -626,9 +632,8 @@ def main(args):
 
         count_dicts.append(bc_count)
 
+    MSG("Generating unfiltered count matrix...")
     # generate the unfiltered count matrix
-    print("start generating the unfiltered count matrix...",
-          flush=True)
     count_dfs = []
     for i in range(0, rep_num):
         count_dfs.append(pd.DataFrame.from_dict(count_dicts[i], orient="index").reset_index())
@@ -641,6 +646,7 @@ def main(args):
     print("done\n", flush=True)
 
     # create the association dictionary 
+    MSG("Create association dictionary...")
     association_dict = {}
 
     file = open(association_path)
@@ -656,6 +662,7 @@ def main(args):
             break 
 
     # filter the count matrix and associate BC with STR
+    MSG("Filter count matrix and associate BC with STR...")
     groups = []
     for i in range(0, rep_num):
         group_num = i + 1

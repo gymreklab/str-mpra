@@ -5,6 +5,7 @@ script for pre-processing of STR-BC assocition
 
 # imports
 import argparse
+from cigar import Cigar
 import copy
 import gzip
 import Levenshtein
@@ -262,7 +263,7 @@ def filter_read (path_R1, path_R2,
             # input file
             file_R1 = open(path_R1, "r")
             file_R2 = open(path_R2, "r")
-        file_out = open(fname, "wb")
+        file_out = gzip.open(fname, "wb")
             
         # start reading the reads
         lines = 0
