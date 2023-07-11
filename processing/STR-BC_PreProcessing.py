@@ -341,7 +341,7 @@ def main(args):
          os.mkdir(os.path.dirname(args.outdir))
             
     # create summary.csv file 
-    sum_file = open(os.path.join(args.outdir, "summary.csv"), "w")
+    sum_file = open(os.path.join(args.outdir, "summary_STRBC_preprocessing.csv"), "w")
     
     # process reads 
     utils.MSG("start filtering reads...")

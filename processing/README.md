@@ -11,8 +11,8 @@ The STR MPRA process consists of two sequencing runs:
 
 1. The STR-BC association library is used to determine which STR sequence each barcode is attached to. Read 1 contains barcode information, and read 2 contains the variable region. Preprocessing of this library is performed with the following scripts:
 
-* `STR-BC_Pre-Processing.py`: performs mapping and filtering of raw reads
-* `STR-BC_Association_v3.py`: obtains the STR-BC association file `associations.tsv`
+* `STR-BC_PreProcessing.py`: performs mapping and filtering of raw reads
+* `STR-BC_Association.py`: obtains the STR-BC association file `associations.tsv`
 
 2. The EXPR library is used to count observed barcodes in gDNA and cDNA libraries. Preprocessing of this library is performed with the following scripts:
 
@@ -28,7 +28,7 @@ Additional options to each script are described below.
 Basic usage (using example files in this repo):
 
 ```shell
-./STR-BC_Pre-Processing.py \
+./STR-BC_PreProcessing.py \
   --read1 test_files/test_reads1.fq.gz \
   --read2 test_files/test_reads2.fq.gz \
   --bwaref test_files/array_probes_human_fullprobe_151bp.fa \
@@ -36,9 +36,9 @@ Basic usage (using example files in this repo):
 ```
 
 Required options:
-* `--read1` and `--read2`: give paths to the reads (fastq or fasta format)
-* `--bwaref`: gives the path to the bwa-indexed reference fasta for the array
-* `--outdir`: gives the output directory to store results in
+* `--read1 <STR>` and `--read2 <STR>`: give paths to the reads (fastq or fasta format)
+* `--bwaref <STR>`: gives the path to the bwa-indexed reference fasta for the array
+* `--outdir <STR>`: gives the output directory to store results in
 
 Additional options for Levenshtein filtering:
 
@@ -48,7 +48,7 @@ Additional options for Levenshtein filtering:
 * `--R2_thres <int>`: Maximum levenshtein score required to kept the read, default is 0
 
 This script outputs:
-* `summary.csv` contains the total number of read pairs considered, the number of read pairs remaining after filtering, and the perfect of read pairs remaining after filtering
+* `summary_STRBC_preprocessing.csv` contains the total number of read pairs considered, the number of read pairs remaining after filtering, and the perfect of read pairs remaining after filtering
 * `filtered.fq.gz`: filtered read 2 fastq file
 * `filtered.bam`: aligned read 2
 
@@ -57,30 +57,28 @@ This script outputs:
 Basic usage (using example files in this repo):
 
 ```shell
-
-
+./STR-BC_Association.py \
+  --bam test_output/filtered.bam \
+  --len 135 \
+  --outdir test_output/
 ```
 
-- __Barcode-STR Association via `STR-BC_Association_v3.py`__
-    - usage \
-      type `STR-BC_Association_v3.py --help` in terminal for detail, below is a sample command for modification
-    ```shell
-    nohup sh -c -u "/storage/q5gong/str-mpra/processing/STR-BC_Association_v3.py \
-      --bam /storage/MPRA/hSTR1/Date_Initial_Association/outputs/pre-process/filtered.bam \
-      --outdir storage/MPRA/hSTR1/Date_Initial_Association/outputs/ \
-      --len 135 \
-      --occurrence 5 \
-      --minBarcode 3"> /storage/MPRA/hSTR1/Date_Initial_Association/association.out 2>&1 &
-    ```
-- note 
-    - For pre-processing, `--read1`, `--read2`, `--outdir` should always be modifed
-    - For association, `--bam`, `--outdir` should always be modified 
-        - the .bam file follow by the flag `--bam` is the output from preprocessing 
-    - __for the output directory__
-        - recommended naming for better organization: \
-          __snorlax__
-          - in `/storage/MPRA/hSTR1/` create a working directory with the format of `Date_Initial_Association` (e.g. `20220712_QG_Association`)
-          - in this working directory, create a `outputs` directory with the `pre-process` directory and `bc-str` directory inside
+Required options:
+* `--bam <STR>`: path to BAM file output by step 1
+* `--outdir <STR>`: gives the output directory to store results in
+* `--len <INT>`: Expected read length
+
+Additional arguments for filtering:
+* `--occurrence <INT>`: Minimum required occurence for a unique STR-BC pair
+* `--minBarcode  <INT>`: Minimum number of unique barcodes required to be associated per STR
+
+This script outputs:
+* `summary_STRBC_association.csv`: contains summary info about passing vs. filtered reads
+* `association.tsv`
+
+The following filters are applied:
+* Remove barcodes not associated with exactly 1 STR
+* Remove STR-BC pairs supported by less than `occurrence` number of reads
 
 ## Expression 
 - read qc and processing via `Expression_QC_Processing.py`
