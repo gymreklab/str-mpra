@@ -485,6 +485,12 @@ def main(args):
     bc_str_df = bc_str_df.drop_duplicates(subset="barcode", keep=False)
     SummarizeBCSTRCount(bc_str_df, sum_file, "After filtering BCs associated with >1 STR")
 
+    '''# Filter 1: 
+    input: BC-STR table w/ counts
+    remove barcodes that have score <??
+    
+    output: BC-STR  we kept, counts, and score BC-STR removed and counts and score '''
+
     # Filter 2: STR-BC occurrence
     utils.MSG("Filter: Filter STR-BC pairs not supported by enough reads")
     bc_str_df = bc_str_df[bc_str_df["count"]>=args.occurrence]
