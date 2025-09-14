@@ -3,7 +3,7 @@
 We designed arrays with 100K sequences for both mm10 and hg38 genomes.
 
 Array design files: https://drive.google.com/drive/folders/1ad2QJ2hmWKugiGwwPil3pdxGk1pr4tIz 
-See code: https://github.com/mikmaksi/111821_mouse_human_array_design
+See code: [https://github.com/mikmaksi/111821_mouse_human_array_design](https://github.com/gymreklab/str_mpra_design)
 
 v4_121321_30bp: v4 array design with 30bp cutoff for homopolymers 
 
