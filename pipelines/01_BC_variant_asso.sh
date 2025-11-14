@@ -49,8 +49,8 @@ cutadapt --cores $THREADS --discard-untrimmed --pair-filter=both --max-n $MAXN_R
     -G X${ADAPT_R2} --minimum-length=$MINL_R2 -e $ERROR_R2 -q 10 -O $MINL_TRIMMED_R2 \
     -o ${DIR_STORAGE}/${DATASET}/clean/${SAMPLE}_R1_s1.fq.gz \
     -p ${DIR_STORAGE}/${DATASET}/clean/${SAMPLE}_R2_s1.fq.gz \
-    ${DIR_STORAGE}/${DATASET}/fq/${SAMPLE}_R1_001.fastq.gz \
-    ${DIR_STORAGE}/${DATASET}/fq/${SAMPLE}_R2_001.fastq.gz
+    ${DIR_STORAGE}/${DATASET}/fq/${SAMPLE}_R1.fastq.gz \
+    ${DIR_STORAGE}/${DATASET}/fq/${SAMPLE}_R2.fastq.gz
 
 cutadapt --cores $THREADS --discard-untrimmed --pair-filter=both \
     -a ${ADAPT_R1}$ --minimum-length=$MINL_R1 -e $ERROR_R1 \

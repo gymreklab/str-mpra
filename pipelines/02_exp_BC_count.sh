@@ -8,25 +8,25 @@ set -e
 # Users can modify these variables and rerun for different samples/datasets
 
 # MODIFY THESE FOR YOUR SAMPLE:
-DATASET=""                              # Your dataset name
-SAMPLE=""                               # Your sample name  
+DATASET="hSTR1"                              # Your dataset name
+SAMPLE="hSTR1_HEK293T_gDNA_Rep1"                               # Your sample name  
 DIR_STORAGE="~"                         # Your data directory
 THREADS=8                               # Number of CPU threads
-ASSO_TABLE=""                           # Path to your association table
+ASSO_TABLE="hSTR1_BC_STRs.tsv"                           # Path to your association table
 
 # ============================================================================
 # HARDCODED VARIABLES (usually don't need to change)
 # ============================================================================
 
 # Adapter and trim params
-ADAPT_R1="AGATCGGAAGAGC"
+ADAPT_R1="TCTAGAGGTTCGTCGACGCGATTATTATCATTACTTGTACAGCTCGTCCATGCCGAGAGTGATCCCGGCGGCGGTCACGAA"
 ERROR_R1=0.1
-MINL_R1=20
-MINL_TRIMMED_R1=10
-MAXN_R1=3
+MINL_R1=15
+MINL_TRIMMED_R1=20
+MAXN_R1=0.1
 
 # Filtering thresholds
-BC_READSNUM_THRESHOLD=10
+BC_READSNUM_THRESHOLD=2
 BC_NUM_THRESHOLD=3
 
 # ============================================================================
@@ -42,12 +42,12 @@ mkdir -p ${DIR_STORAGE}/${DATASET}/{clean,expression/${SAMPLE},expression/result
 echo "Trimming adapters..."
 cutadapt --cores ${THREADS} --discard-untrimmed --max-n ${MAXN_R1} \
     -a ${ADAPT_R1} --minimum-length=${MINL_R1} -e ${ERROR_R1} -q 10 -O ${MINL_TRIMMED_R1} \
-    -o ${DIR_STORAGE}/${DATASET}/clean/${SAMPLE}_R1.fq.gz \
-    ${DIR_STORAGE}/${DATASET}/fq/${SAMPLE}_R1_001.fastq.gz
+    -o ${DIR_STORAGE}/${DATASET}/clean/${SAMPLE}.fq.gz \
+    ${DIR_STORAGE}/${DATASET}/fq/${SAMPLE}.fastq.gz
 
 # Count barcodes
 echo "Counting barcodes..."
-zcat ${DIR_STORAGE}/${DATASET}/clean/${SAMPLE}_R1.fq.gz | \
+zcat ${DIR_STORAGE}/${DATASET}/clean/${SAMPLE}.fq.gz | \
     awk '(NR%4==2){print $0}' | \
     sort -S10G --parallel=${THREADS} | \
     uniq -c | \
